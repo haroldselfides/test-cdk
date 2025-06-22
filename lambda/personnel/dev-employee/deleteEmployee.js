@@ -18,34 +18,26 @@ exports.handler = async (event) => {
     const pk = `EMP#${employeeId}`;
     const sk = 'METADATA';
 
-    const params = {
-      TransactItems: [
-        // Ensure the employee exists
-        {
-          ConditionCheck: {
-            TableName: tableName,
-            Key: { PK: pk, SK: sk },
-            ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
-          },
+  const params = {
+  TransactItems: [
+    {
+      Update: {
+        TableName: tableName,
+        Key: { PK: pk, SK: sk },
+        ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
+        UpdateExpression: 'SET #status = :inactive, deletedAt = :timestamp',
+        ExpressionAttributeNames: {
+          '#status': 'status',
         },
-        // Soft-delete: update the status to 'Inactive'
-        {
-          Update: {
-            TableName: tableName,
-            Key: { PK: pk, SK: sk },
-            UpdateExpression: 'SET #status = :inactive, deletedAt = :timestamp',
-            ExpressionAttributeNames: {
-              '#status': 'status',
-            },
-            ExpressionAttributeValues: {
-              ':inactive': encrypt('Inactive'),
-              ':timestamp': new Date().toISOString(),
-            },
-            ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
-          },
+        ExpressionAttributeValues: {
+          ':inactive': encrypt('Inactive'),
+          ':timestamp': new Date().toISOString(),
         },
-      ],
-    };
+        ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
+      },
+    },
+  ],
+  };
 
     await dynamo.transactWrite(params).promise();
 
