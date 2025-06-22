@@ -37,14 +37,6 @@ exports.handler = async (event) => {
 
     const params = {
       TransactItems: [
-        // Condition to ensure the item exists
-        {
-          ConditionCheck: {
-            TableName: tableName,
-            Key: { PK: pk, SK: sk },
-            ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
-          },
-        },
         {
           Update: {
             TableName: tableName,
@@ -59,8 +51,12 @@ exports.handler = async (event) => {
                   gender = :gender,
                   nationality = :nationality,
                   maritalStatus = :maritalStatus,
-                  status = :status
+                  #status = :status
             `,
+            ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
+            ExpressionAttributeNames: {
+              '#status': 'status',
+            },
             ExpressionAttributeValues: {
               ':firstName': encrypt(firstName),
               ':lastName': encrypt(lastName),
@@ -73,7 +69,6 @@ exports.handler = async (event) => {
               ':maritalStatus': maritalStatus,
               ':status': encrypt(status),
             },
-            ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
           },
         },
       ],
