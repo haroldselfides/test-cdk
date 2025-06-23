@@ -15,8 +15,8 @@ exports.handler = async (event) => {
       };
     }
 
-    const pk = `EMP#${employeeId}`;
-    const sk = 'METADATA';
+    const pk = `EMPLOYEE#${employeeId}`;
+    const sk = 'SECTION#PERSONAL_DATA';
 
     const params = {
       TransactItems: [

@@ -1,5 +1,5 @@
 const AWS = require('aws-sdk');
-const { encrypt,decrypt } = require('../../utils/cryptoUtils');
+const { encrypt, decrypt } = require('../../utils/cryptoUtils');
 
 const dynamoDb = new AWS.DynamoDB.DocumentClient();
 const tableName = process.env.TEST_TABLE_NAME;
@@ -20,7 +20,7 @@ exports.handler = async (event) => {
       TableName: tableName,
       KeyConditionExpression: 'PK = :pk',
       ExpressionAttributeValues: {
-        ':pk': `EMP#${employeeId}`,
+        ':pk': `EMPLOYEE#${employeeId}`,
       },
     };
 
@@ -33,8 +33,8 @@ exports.handler = async (event) => {
       };
     }
 
-    // Find the METADATA item
-    const metadataItem = result.Items.find(item => item.SK === 'METADATA');
+    // Find the METADATA item 
+    const metadataItem = result.Items.find(item => item.SK === 'SECTION#PERSONAL_DATA');
 
     if (!metadataItem) {
       return {
@@ -43,6 +43,14 @@ exports.handler = async (event) => {
       };
     }
 
+    const decryptedStatus = decrypt(metadataItem.status);
+    if (decryptedStatus !== 'Active'){
+      return{
+        statusCode: 403,  
+         body: JSON.stringify({message: 'This employee is inactive'}),
+      };
+    }
+  
     const employee = {
       employeeId: metadataItem.employeeId,
       firstName: decrypt(metadataItem.firstName),
@@ -55,7 +63,7 @@ exports.handler = async (event) => {
       nationality: metadataItem.nationality,
       maritalStatus: metadataItem.maritalStatus,
       status: decrypt(metadataItem.status),
-      createdAt: metadataItem.createdAt,
+
     };
 
     return {
