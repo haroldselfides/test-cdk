@@ -3,7 +3,7 @@ const AWS = require('aws-sdk');
 const Joi = require('joi');
 
 const dynamoDb = new AWS.DynamoDB.DocumentClient();
-const tableName = process.env.PERSONNEL_TABLE_NAME;
+const tableName = process.env.TEST_TABLE_NAME;
 
 // Joi schema to validate update payload
 const schema = Joi.object({

@@ -2,7 +2,7 @@ const AWS = require('aws-sdk');
 const { encrypt, decrypt } = require('../../utils/cryptoUtils');
 
 const dynamoDb = new AWS.DynamoDB.DocumentClient();
-const tableName = process.env.PERSONNEL_TABLE_NAME;
+const tableName = process.env.TEST_TABLE_NAME;
 
 exports.handler = async (event) => {
   try {
@@ -46,8 +46,8 @@ exports.handler = async (event) => {
     const decryptedStatus = decrypt(metadataItem.status);
     if (decryptedStatus !== 'Active'){
       return{
-        statusCode: 403,
-        body: JSON.stringify({message: 'This employee is inactive'}),
+        statusCode: 403,  
+         body: JSON.stringify({message: 'This employee is inactive'}),
       };
     }
   
@@ -63,6 +63,7 @@ exports.handler = async (event) => {
       nationality: metadataItem.nationality,
       maritalStatus: metadataItem.maritalStatus,
       status: decrypt(metadataItem.status),
+
     };
 
     return {

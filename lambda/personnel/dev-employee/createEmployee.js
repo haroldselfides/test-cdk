@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const AWS = require('aws-sdk');
 
 const dynamoDb = new AWS.DynamoDB.DocumentClient();
-const tableName = process.env.PERSONNEL_TABLE_NAME;
+const tableName = process.env.TEST_TABLE_NAME;
 
 exports.handler = async (event) => {
   try {
