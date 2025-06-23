@@ -15,7 +15,6 @@ exports.handler = async (event) => {
       };
     }
 
-    // Use Query instead of GetItem to fetch all related items under same PK
     const params = {
       TableName: tableName,
       KeyConditionExpression: 'PK = :pk',
@@ -25,7 +24,6 @@ exports.handler = async (event) => {
     };
 
     const result = await dynamoDb.query(params).promise();
-
     if (!result.Items || result.Items.length === 0) {
       return {
         statusCode: 404,
@@ -33,42 +31,66 @@ exports.handler = async (event) => {
       };
     }
 
-    // Find the METADATA item 
-    const metadataItem = result.Items.find(item => item.SK === 'SECTION#PERSONAL_DATA');
-
-    if (!metadataItem) {
+    const personalData = result.Items.find(item => item.SK === 'SECTION#PERSONAL_DATA');
+    if (!personalData) {
       return {
         statusCode: 404,
-        body: JSON.stringify({ error: 'Metadata for employee not found.' }),
+        body: JSON.stringify({ error: 'Personal data not found.' }),
       };
     }
 
-    const decryptedStatus = decrypt(metadataItem.status);
-    if (decryptedStatus !== 'Active'){
-      return{
-        statusCode: 403,  
-         body: JSON.stringify({message: 'This employee is inactive'}),
+    if (personalData.status !== 'Active') {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({ message: 'Unable to perform action. This employee is inactive.' }),
       };
     }
-  
-    const employee = {
-      employeeId: metadataItem.employeeId,
-      firstName: decrypt(metadataItem.firstName),
-      lastName: decrypt(metadataItem.lastName),
-      middleName: metadataItem.middleName || '',
-      preferredName: metadataItem.preferredName || '',
-      nationalId: decrypt(metadataItem.nationalId),
-      dateOfBirth: metadataItem.dateOfBirth,
-      gender: metadataItem.gender,
-      nationality: metadataItem.nationality,
-      maritalStatus: metadataItem.maritalStatus,
-      status: decrypt(metadataItem.status),
 
+    const contactInfo = result.Items.find(item => item.SK === 'SECTION#CONTACT_INFO') || {};
+    const contractDetails = result.Items.find(item => item.SK === 'SECTION#CONTRACT_DETAILS') || {};
+
+    const response = {
+      employeeId: personalData.employeeId,
+      personalData: {
+        firstName: decrypt(personalData.firstName),
+        lastName: decrypt(personalData.lastName),
+        middleName: personalData.middleName ? decrypt(personalData.middleName) : '',
+        preferredName: personalData.preferredName || '',
+        nationalId: decrypt(personalData.nationalId),
+        dateOfBirth: personalData.dateOfBirth,
+        gender: personalData.gender,
+        nationality: personalData.nationality,
+        maritalStatus: personalData.maritalStatus,
+        status: personalData.status,
+        createdAt: personalData.createdAt,
+      },
+      contactInfo: {
+        email: contactInfo.email ? decrypt(contactInfo.email) : '',
+        phone: contactInfo.phone ? decrypt(contactInfo.phone) : '',
+        altPhone: contactInfo.altPhone ? decrypt(contactInfo.altPhone) : '',
+        address: contactInfo.address ? decrypt(contactInfo.address) : '',
+        city: contactInfo.city || '',
+        state: contactInfo.state || '',
+        postalCode: contactInfo.postalCode || '',
+        country: contactInfo.country || '',
+        emergencyContactName: contactInfo.emergencyContactName || '',
+        emergencyContactPhone: contactInfo.emergencyContactPhone || '',
+        emergencyContactRelationship: contactInfo.emergencyContactRelationship || '',
+      },
+      contractDetails: {
+        role: contractDetails.role || '',
+        department: contractDetails.department || '',
+        jobLevel: contractDetails.jobLevel || '',
+        contractType: contractDetails.contractType || '',
+        salaryGrade: contractDetails.salaryGrade || '',
+        salaryPay: contractDetails.salaryPay || '',
+        allowance: contractDetails.allowance || '',
+      },
     };
 
     return {
       statusCode: 200,
-      body: JSON.stringify(employee),
+      body: JSON.stringify(response),
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Credentials": true,
