@@ -1,23 +1,10 @@
 const { encrypt, decrypt } = require('../../utils/cryptoUtils');
+const { employeeSchema, fieldConfig } = require('../../utils/employeeSchema');
+
 const AWS = require('aws-sdk');
-const Joi = require('joi');
 
 const dynamoDb = new AWS.DynamoDB.DocumentClient();
 const tableName = process.env.TEST_TABLE_NAME;
-
-// Joi schema to validate update payload
-const schema = Joi.object({
-  firstName: Joi.string().trim().min(1),
-  lastName: Joi.string().trim().min(1),
-  middleName: Joi.string().trim().allow('', null),
-  preferredName: Joi.string().trim().min(1),
-  nationalId: Joi.string().trim().min(1),
-  dateOfBirth: Joi.string().isoDate(),
-  gender: Joi.string().valid('Male', 'Female', 'Other'),
-  nationality: Joi.string().trim(),
-  maritalStatus: Joi.string().valid('Single', 'Married', 'Divorced', 'Widowed'),
-  status: Joi.string().valid('Active', 'Inactive'),
-});
 
 exports.handler = async (event) => {
   try {
@@ -25,26 +12,12 @@ exports.handler = async (event) => {
     if (!employeeId) return response(400, 'Missing employeeId in path.');
 
     const body = JSON.parse(event.body || '{}');
-    const { error, value: validatedData } = schema.validate(body, { stripUnknown: true });
+    const { error, value: validatedData } = employeeSchema.validate(body, { stripUnknown: true });
 
     if (error) return response(400, 'Validation error', error.details.map(error => error.message));
 
     const modifiedBy = 'BackendDeveloper';
     const modifiedAt = new Date().toISOString();
-
-    // Define fields that require encryption
-    const fieldConfig = {
-      firstName     : true,
-      lastName      : true,
-      middleName    : false,
-      preferredName : false,
-      nationalId    : true,
-      dateOfBirth   : false,
-      gender        : false,
-      nationality   : false,
-      maritalStatus : false,
-      status: true,
-    };
 
     // 🔹 Fetch existing record
     const existingRec = await dynamoDb.get({
@@ -57,9 +30,15 @@ exports.handler = async (event) => {
 
     if (!existingRec.Item) return response(404, 'Employee not found.');
 
+    const empRecord = existingRec.Item;
+
+    // Block update if employee is inactive
+    if (empRecord.status === 'Inactive') {
+      return response(403, `Unable to perform action this Employee is Inactive`);
+    }
+
     const existing = existingRec.Item;
     const updates  = {};
-    const former   = {};
     const updated  = {};
 
     // check for changes in fields
@@ -73,7 +52,6 @@ exports.handler = async (event) => {
           updates[field] = shouldEncrypt ? encrypt(newPlain) : newPlain;
           
           // response from request
-          former[field] = oldPlain;
           updated[field] = newPlain;
         }
       }
@@ -123,9 +101,6 @@ exports.handler = async (event) => {
       body: JSON.stringify ({
         message: 'Employee updated successfully',
         employeeId,
-        modifiedAt,
-        modifiedBy,
-        former,
         updated,
       })
     };

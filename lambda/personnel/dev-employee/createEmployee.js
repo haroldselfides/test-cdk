@@ -9,7 +9,6 @@ exports.handler = async (event) => {
   try {
     const body = JSON.parse(event.body);
 
-
     const {
       firstName,
       lastName,
@@ -20,11 +19,11 @@ exports.handler = async (event) => {
       gender,
       nationality,
       maritalStatus,
-      status
+      status = 'Active'  // Default to Active if not provided
     } = body;
 
     // Validate required fields
-    if (!firstName || !lastName || !nationalId || !dateOfBirth || !gender || !nationality || !maritalStatus || !status) {
+    if (!firstName || !lastName || !nationalId || !dateOfBirth || !gender || !nationality || !maritalStatus) {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: 'Missing required fields.' }),
@@ -46,7 +45,7 @@ exports.handler = async (event) => {
       gender,
       nationality,
       maritalStatus,
-      status: encrypt(status),
+      status,
     };
 
     await dynamoDb.put({

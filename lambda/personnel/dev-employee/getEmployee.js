@@ -43,13 +43,12 @@ exports.handler = async (event) => {
       };
     }
 
-    const decryptedStatus = decrypt(metadataItem.status);
-    if (decryptedStatus !== 'Active'){
-      return{
-        statusCode: 403,  
-         body: JSON.stringify({message: 'This employee is inactive'}),
-      };
-    }
+    if (metadataItem.status !== 'Active') {
+    return {
+      statusCode: 403,
+      body: JSON.stringify({ message: 'Unable to perform action this Employee is Inactive' }),
+    };
+  }
   
     const employee = {
       employeeId: metadataItem.employeeId,
@@ -62,7 +61,7 @@ exports.handler = async (event) => {
       gender: metadataItem.gender,
       nationality: metadataItem.nationality,
       maritalStatus: metadataItem.maritalStatus,
-      status: decrypt(metadataItem.status),
+      status: metadataItem.status,
 
     };
 
