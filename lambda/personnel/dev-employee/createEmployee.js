@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const AWS = require('aws-sdk');
 
 const dynamoDb = new AWS.DynamoDB.DocumentClient();
-const tableName = process.env.TEST_TABLE_NAME;
+const tableName = process.env.PERSONNEL_TABLE_NAME;
 
 exports.handler = async (event) => {
   try {
@@ -34,8 +34,8 @@ exports.handler = async (event) => {
     const employeeId = uuidv4();
 
     const item = {
-      PK: `EMP#${employeeId}`,
-      SK: 'METADATA',
+      PK: `EMPLOYEE#${employeeId}`,
+      SK: 'SECTION#PERSONAL_DATA',
       employeeId,
       firstName: encrypt(firstName),
       lastName: encrypt(lastName),
@@ -47,7 +47,6 @@ exports.handler = async (event) => {
       nationality,
       maritalStatus,
       status: encrypt(status),
-      createdAt: new Date().toISOString(),
     };
 
     await dynamoDb.put({

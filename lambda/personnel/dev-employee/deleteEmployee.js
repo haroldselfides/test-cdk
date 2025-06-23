@@ -2,7 +2,7 @@ const AWS = require('aws-sdk');
 const { encrypt } = require('../../utils/cryptoUtils');
 
 const dynamo = new AWS.DynamoDB.DocumentClient();
-const tableName = process.env.TEST_TABLE_NAME;
+const tableName = process.env.PERSONNEL_TABLE_NAME;
 
 exports.handler = async (event) => {
   try {
@@ -15,29 +15,37 @@ exports.handler = async (event) => {
       };
     }
 
-    const pk = `EMP#${employeeId}`;
-    const sk = 'METADATA';
+    const pk = `EMPLOYEE#${employeeId}`;
+    const sk = 'SECTION#PERSONAL_DATA';
 
-  const params = {
-  TransactItems: [
-    {
-      Update: {
-        TableName: tableName,
-        Key: { PK: pk, SK: sk },
-        ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
-        UpdateExpression: 'SET #status = :inactive, deletedAt = :timestamp',
-        ExpressionAttributeNames: {
-          '#status': 'status',
+    const params = {
+      TransactItems: [
+        // Ensure the employee exists
+        {
+          ConditionCheck: {
+            TableName: tableName,
+            Key: { PK: pk, SK: sk },
+            ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
+          },
         },
-        ExpressionAttributeValues: {
-          ':inactive': encrypt('Inactive'),
-          ':timestamp': new Date().toISOString(),
+        // Soft-delete: update the status to 'Inactive'
+        {
+          Update: {
+            TableName: tableName,
+            Key: { PK: pk, SK: sk },
+            UpdateExpression: 'SET #status = :inactive, deletedAt = :timestamp',
+            ExpressionAttributeNames: {
+              '#status': 'status',
+            },
+            ExpressionAttributeValues: {
+              ':inactive': encrypt('Inactive'),
+              ':timestamp': new Date().toISOString(),
+            },
+            ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
+          },
         },
-        ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
-      },
-    },
-  ],
-  };
+      ],
+    };
 
     await dynamo.transactWrite(params).promise();
 
