@@ -1,8 +1,7 @@
-// searchEmployees.js
-exports.handler = async () => {
+exports.handler = async (event) => {
+  console.log('searchEmployees Lambda invoked:', event);
   return {
     statusCode: 200,
-    body: JSON.stringify({ message: "searchEmployees works!" }),
+    body: JSON.stringify({ message: 'Searches for employees by name, ID, department, or other criteria' }),
   };
 };
-s

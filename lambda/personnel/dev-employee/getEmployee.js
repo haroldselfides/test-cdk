@@ -1,85 +1,147 @@
-const AWS = require('aws-sdk');
-const { encrypt, decrypt } = require('../../utils/cryptoUtils');
+// lambda/personnel/dev-employee/getEmployee.js
 
-const dynamoDb = new AWS.DynamoDB.DocumentClient();
-const tableName = process.env.TEST_TABLE_NAME;
+const { DynamoDBClient, QueryCommand } = require('@aws-sdk/client-dynamodb');
+const { unmarshall } = require('@aws-sdk/util-dynamodb');
+const { decrypt } = require('../../utils/cryptoUtil');
 
+const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
+const tableName = process.env.PERSONNEL_TABLE_NAME;
+
+/**
+ * A helper function to assemble and decrypt the employee data from DynamoDB items
+ * into a structured, nested object. Ensures optional fields are always present
+ * with a default empty value (e.g., "" or null) for a consistent response shape.
+ * @param {Array<Object>} items - The array of items returned from the DynamoDB query.
+ * @returns {Object | null} A single, nested employee object, or null.
+ */
+const assembleAndDecryptEmployee = (items) => {
+  if (!items || items.length === 0) {
+    return null;
+  }
+
+  // Combine all items into a single flat object for easy access
+  const combinedData = items.reduce((acc, item) => ({ ...acc, ...item }), {});
+
+  // --- BUILD NESTED OBJECTS, PROVIDING DEFAULTS FOR OPTIONAL FIELDS ---
+
+  const personalData = {
+    // Required fields
+    firstName: decrypt(combinedData.firstName),
+    lastName: decrypt(combinedData.lastName),
+    middleName: combinedData.middleName ? decrypt(combinedData.middleName) : "", // Plaintext optional field
+    preferredName: combinedData.preferredName || "", // Plaintext optional field
+    nationalId: decrypt(combinedData.nationalId),
+    dateOfBirth: combinedData.dateOfBirth,
+    age: combinedData.age,
+    gender: combinedData.gender,
+    nationality: combinedData.nationality,
+    maritalStatus: combinedData.maritalStatus,
+  };
+
+  const contactInfo = {
+    // Required fields
+    email: decrypt(combinedData.email),
+    phone: decrypt(combinedData.phone),
+    altPhone: combinedData.altPhone ? decrypt(combinedData.altPhone) : "", // Optional field
+    address: decrypt(combinedData.address),
+    city: decrypt(combinedData.city),
+    state: decrypt(combinedData.state),
+    postalCode: decrypt(combinedData.postalCode),
+    country: decrypt(combinedData.country),
+    emergencyContact: {
+        name: combinedData.emergencyContactName ? decrypt(combinedData.emergencyContactName) : "",
+        phone: combinedData.emergencyContactPhone ? decrypt(combinedData.emergencyContactPhone) : "",
+        relationship: combinedData.emergencyContactRelationship ? decrypt(combinedData.emergencyContactRelationship) : "",
+    }
+  };
+
+  const contractDetails = {
+    // Required fields
+    role: combinedData.role,
+    department: combinedData.department,
+    jobLevel: combinedData.jobLevel,
+    contractType: combinedData.contractType,
+    salaryGrade: combinedData.salaryGrade,
+    salaryPay: combinedData.salaryPay,
+    allowance: combinedData.allowance !== undefined ? combinedData.allowance : null, // Optional field with a null default to distinguish from a value of 0
+  };
+
+  // --- ASSEMBLE THE FINAL, TOP-LEVEL OBJECT ---
+  const finalResponse = {
+    employee: {
+      personalData,
+      contactInfo,
+      contractDetails,
+    }
+  };
+
+  return finalResponse;
+};
+
+
+// The main handler function remains unchanged as its logic is already correct.
 exports.handler = async (event) => {
+  const { employeeId } = event.pathParameters;
+  console.log(`Received request to get details for employee ID: ${employeeId}`);
+
+  if (!employeeId) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ message: 'Employee ID is required.' }),
+    };
+  }
+
+  const pk = `EMPLOYEE#${employeeId}`;
+
+  const queryParams = {
+    TableName: tableName,
+    KeyConditionExpression: 'PK = :pk',
+    ExpressionAttributeValues: {
+      ':pk': { S: pk },
+    },
+  };
+
   try {
-    const { employeeId } = event.pathParameters;
+    console.log(`Querying DynamoDB for employee with PK: ${pk}`);
+    const { Items } = await dbClient.send(new QueryCommand(queryParams));
 
-    if (!employeeId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: 'Missing employeeId in path.' }),
-      };
-    }
-
-    // Use Query instead of GetItem to fetch all related items under same PK
-    const params = {
-      TableName: tableName,
-      KeyConditionExpression: 'PK = :pk',
-      ExpressionAttributeValues: {
-        ':pk': `EMPLOYEE#${employeeId}`,
-      },
-    };
-
-    const result = await dynamoDb.query(params).promise();
-
-    if (!result.Items || result.Items.length === 0) {
+    if (!Items || Items.length === 0) {
+      console.warn(`No records found for employee ID: ${employeeId}.`);
       return {
         statusCode: 404,
-        body: JSON.stringify({ error: 'Employee not found.' }),
+        body: JSON.stringify({ message: 'Employee not found.' }),
       };
     }
 
-    // Find the METADATA item 
-    const metadataItem = result.Items.find(item => item.SK === 'SECTION#PERSONAL_DATA');
+    const unmarshalledItems = Items.map(item => unmarshall(item));
 
-    if (!metadataItem) {
+    const personalDataItem = unmarshalledItems.find(item => item.SK === 'SECTION#PERSONAL_DATA');
+
+    if (!personalDataItem || personalDataItem.status !== 'ACTIVE') {
+      console.warn(`Employee ID: ${employeeId} is not active or personal data is missing.`);
       return {
         statusCode: 404,
-        body: JSON.stringify({ error: 'Metadata for employee not found.' }),
+        body: JSON.stringify({ message: 'Employee not found or is not active.' }),
       };
     }
+    console.log(`Employee ID: ${employeeId} is active. Proceeding with data assembly.`);
 
-    const decryptedStatus = decrypt(metadataItem.status);
-    if (decryptedStatus !== 'Active'){
-      return{
-        statusCode: 403,  
-         body: JSON.stringify({message: 'This employee is inactive'}),
-      };
-    }
-  
-    const employee = {
-      employeeId: metadataItem.employeeId,
-      firstName: decrypt(metadataItem.firstName),
-      lastName: decrypt(metadataItem.lastName),
-      middleName: metadataItem.middleName || '',
-      preferredName: metadataItem.preferredName || '',
-      nationalId: decrypt(metadataItem.nationalId),
-      dateOfBirth: metadataItem.dateOfBirth,
-      gender: metadataItem.gender,
-      nationality: metadataItem.nationality,
-      maritalStatus: metadataItem.maritalStatus,
-      status: decrypt(metadataItem.status),
-
-    };
-
+    const employeeDetails = assembleAndDecryptEmployee(unmarshalledItems);
+    
+    console.log(`Successfully retrieved and decrypted data for employee ID: ${employeeId}`);
     return {
       statusCode: 200,
-      body: JSON.stringify(employee),
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Credentials": true,
-      },
+      body: JSON.stringify(employeeDetails),
     };
 
   } catch (error) {
-    console.error('Error retrieving employee:', error);
+    console.error('An error occurred while getting employee details:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Internal Server Error', details: error.message }),
+      body: JSON.stringify({
+        message: 'Internal Server Error. Failed to retrieve employee details.',
+        error: error.message,
+      }),
     };
   }
 };

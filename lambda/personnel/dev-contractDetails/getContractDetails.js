@@ -1,7 +1,7 @@
-// getContractDetails.js
-exports.handler = async () => {
+exports.handler = async (event) => {
+  console.log('getContractDetails Lambda invoked:', event);
   return {
     statusCode: 200,
-    body: JSON.stringify({ message: "getContractDetails works!" }),
+    body: JSON.stringify({ message: 'Retrieves employee contract details for the Contract Details tab' }),
   };
 };
