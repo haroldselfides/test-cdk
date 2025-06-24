@@ -5,4 +5,3 @@ exports.handler = async () => {
     body: JSON.stringify({ message: "searchEmployees works!" }),
   };
 };
-s
