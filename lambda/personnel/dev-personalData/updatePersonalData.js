@@ -6,7 +6,7 @@ const { encrypt } = require('../../utils/cryptoUtil');
 const { validateBody } = require('../../utils/validationUtil');
 
 const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
-const tableName = process.env.PERSONNEL_TABLE_NAME;
+const tableName = process.env.TEST_TABLE_NAME;
 
 // Required fields for just this section
 const requiredFields = [
