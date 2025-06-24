@@ -1,63 +1,80 @@
-const AWS = require('aws-sdk');
-const { encrypt } = require('../../utils/cryptoUtils');
+// lambda/personnel/dev-employee/deleteEmployee.js
 
-const dynamo = new AWS.DynamoDB.DocumentClient();
+const { DynamoDBClient, UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
+const { marshall } = require('@aws-sdk/util-dynamodb');
+
+const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const tableName = process.env.TEST_TABLE_NAME;
 
 exports.handler = async (event) => {
-  try {
-    const { employeeId } = event.pathParameters;
+  const { employeeId } = event.pathParameters;
+  console.log(`Received request to archive employee ID: ${employeeId}`);
 
-    if (!employeeId) {
+  // 1. --- Input Validation ---
+  if (!employeeId) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ message: 'Employee ID is required in the path.' }),
+    };
+  }
+
+  // 2. --- Construct Update Parameters ---
+  // This command targets the specific personal data item and updates only its status.
+  const params = {
+    TableName: tableName,
+    Key: marshall({
+      PK: `EMPLOYEE#${employeeId}`,
+      SK: 'SECTION#PERSONAL_DATA', // The 'status' attribute lives here
+    }),
+    // The UpdateExpression sets the 'status' attribute to the new value 'INACTIVE'.
+    UpdateExpression: 'SET #status = :inactiveStatus',
+    // The ConditionExpression ensures this operation only succeeds if the current status is 'ACTIVE'.
+    // This prevents archiving an already archived user or a non-existent one.
+    ConditionExpression: '#status = :activeStatus',
+    ExpressionAttributeNames: {
+      '#status': 'status',
+    },
+    ExpressionAttributeValues: marshall({
+      ':inactiveStatus': 'INACTIVE',
+      ':activeStatus': 'ACTIVE',
+    }),
+    // We don't need the old or new values back, so we set ReturnValues to NONE for efficiency.
+    ReturnValues: 'NONE',
+  };
+
+  try {
+    // 3. --- Execute the Atomic Update ---
+    console.log(`Executing update to archive employee ${employeeId}...`);
+    await dbClient.send(new UpdateItemCommand(params));
+    console.log(`Successfully archived employee with ID: ${employeeId}`);
+
+    // 4. --- Return Success Response ---
+    // A 204 No Content response is often appropriate for a successful DELETE action
+    // where there's nothing to return. A 200 with a message is also fine.
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: 'Employee archived successfully.' }),
+    };
+
+  } catch (error) {
+    // This specific error name means our ConditionExpression failed.
+    if (error.name === 'ConditionalCheckFailedException') {
+      console.warn(`Attempted to archive employee ${employeeId}, but they are not active or do not exist.`);
+      // Return a 404 to the client. This is standard practice.
       return {
-        statusCode: 400,
-        body: JSON.stringify({ error: 'Missing employeeId in path.' }),
+        statusCode: 404,
+        body: JSON.stringify({ message: 'Employee not found or is already inactive.' }),
       };
     }
 
-    const pk = `EMPLOYEE#${employeeId}`;
-    const sk = 'SECTION#PERSONAL_DATA';
-
-    const params = {
-      TransactItems: [
-        // Ensure the employee exists
-        {
-          ConditionCheck: {
-            TableName: tableName,
-            Key: { PK: pk, SK: sk },
-            ConditionExpression: 'attribute_exists(PK) AND attribute_exists(SK)',
-          },
-        },
-        // Soft-delete: update the status to 'Inactive'
-        {
-          Update: {
-            TableName: tableName,
-            Key: { PK: pk, SK: sk },
-            UpdateExpression: 'SET #status = :inactive, deletedAt = :timestamp',
-            ExpressionAttributeNames: {
-              '#status': 'status',
-            },
-            ExpressionAttributeValues: {
-              ':inactive': encrypt('Inactive'),
-              ':timestamp': new Date().toISOString(),
-            },
-            ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
-          },
-        },
-      ],
-    };
-
-    await dynamo.transactWrite(params).promise();
-
+    // Handle any other unexpected errors.
+    console.error(`An error occurred while archiving employee ID ${employeeId}:`, error);
     return {
-      statusCode: 200,
-      body: JSON.stringify({ message: 'Employee soft-deleted (status: Inactive).' }),
-    };
-  } catch (err) {
-    console.error('Soft delete failed:', err);
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: 'Soft delete failed', details: err.message }),
+      statusCode: 500,
+      body: JSON.stringify({
+        message: 'Internal Server Error. Failed to archive employee.',
+        error: error.message,
+      }),
     };
   }
 };
