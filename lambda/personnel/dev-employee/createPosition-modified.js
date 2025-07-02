@@ -30,57 +30,41 @@ exports.handler = async (event) => {
       };
     }
 
-    // 1. --- Validate department exists ---
-    const departmentParams = {
+    // Get department manager
+    const departmentCode = body.department;
+    const managerGetParams = {
       TableName: tableName,
       Key: marshall({
-        PK: `ORG#DEPARTMENT#${body.department}`,
-        SK: 'METADATA'
-      }),
+        PK: `DEPARTMENT#${departmentCode}`,
+        SK: 'MANAGER'
+      })
     };
 
-    const departmentResult = await dbClient.send(new GetItemCommand(departmentParams));
-    if (!departmentResult.Item) {
+    const { Item: managerItem } = await dbClient.send(new GetItemCommand(managerGetParams));
+    if (!managerItem) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ message: `Department Code Not found.: ${body.department}` }),
+        body: JSON.stringify({ message: `Department ${departmentCode} not found or has no manager assigned` })
       };
     }
 
-    // 2. --- Get department manager ---
-    const managerParams = {
-      TableName: tableName,
-      Key: marshall({
-        PK: `ORG#DEPARTMENT#${body.department}`,
-        SK: 'METADATA'
-      }),
-    };
+    const departmentManager = unmarshall(managerItem);
+    const managerId = departmentManager.managerId;
 
-    const managerResult = await dbClient.send(new GetItemCommand(managerParams));
-    if (!managerResult.Item) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'No manager assigned to this department.' }),
-      };
-    }
-
-    const managerData = unmarshall(managerResult.Item);
-
-    // 3. --- Prepare Item ---
     const positionId = uuidv4();
-    const pk = `ORG#POSITION#${positionId}`;
+    const pk = `POSITION#${positionId}`;
 
     const positionItem = {
       PK: pk,
       SK: 'METADATA',
-      positionId,
+      positionId: positionId,
       positionTitle: body.positionTitle,
       positionCode: body.positionCode,
-      department: body.department,
+      department: departmentCode,
       positionLevel: body.positionLevel,
       employmentType: body.employmentType,
-      reportsTo: managerData.managerId,
-      positionDescription: encrypt(body.positionDescription),
+      reportsTo: managerId,
+      positionDescription: body.positionDescription ? encrypt(body.positionDescription) : undefined,
       education: body.education,
       skills: body.skills,
       certifications: body.certifications,
@@ -91,12 +75,12 @@ exports.handler = async (event) => {
       createdAt: new Date().toISOString(),
     };
 
+    console.log('Creating position record...');
     await dbClient.send(new PutItemCommand({
       TableName: tableName,
       Item: marshall(positionItem, { removeUndefinedValues: true }),
       ConditionExpression: 'attribute_not_exists(PK)'
     }));
-
     console.log(`Successfully created position with ID: ${positionId}`);
 
     return {
@@ -108,6 +92,12 @@ exports.handler = async (event) => {
     };
 
   } catch (error) {
+    if (error.name === 'ConditionalCheckFailedException') {
+      return {
+        statusCode: 409,
+        body: JSON.stringify({ message: 'A position with this ID already exists, which should not happen. Please try again.' }),
+      };
+    }
     console.error('An error occurred during position creation:', error);
     return {
       statusCode: 500,

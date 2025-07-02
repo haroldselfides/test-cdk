@@ -10,7 +10,7 @@ const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const tableName = process.env.TEST_ORGANIZATIONAL_TABLE_NAME;
 
 const positionRequiredFields = [
-  'positionTitle', 'positionCode', 'department', 'positionLevel',
+  'positionTitle', 'positionCode', 'departmentCode', 'positionLevel',
   'employmentType', 'positionDescription', 'education',
   'skills', 'certifications', 'salaryGrade', 'competencyLevel'
 ];
@@ -34,16 +34,16 @@ exports.handler = async (event) => {
     const departmentParams = {
       TableName: tableName,
       Key: marshall({
-        PK: `ORG#DEPARTMENT#${body.department}`,
+        PK: `ORG#DEPARTMENT#${body.departmentCode}`,
         SK: 'METADATA'
-      }),
+      })
     };
 
     const departmentResult = await dbClient.send(new GetItemCommand(departmentParams));
     if (!departmentResult.Item) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ message: `Department Code Not found.: ${body.department}` }),
+        body: JSON.stringify({ message: 'Invalid department code' }),
       };
     }
 
@@ -51,9 +51,9 @@ exports.handler = async (event) => {
     const managerParams = {
       TableName: tableName,
       Key: marshall({
-        PK: `ORG#DEPARTMENT#${body.department}`,
-        SK: 'METADATA'
-      }),
+        PK: `ORG#DEPARTMENT#${body.departmentCode}`,
+        SK: 'MANAGER'
+      })
     };
 
     const managerResult = await dbClient.send(new GetItemCommand(managerParams));
@@ -76,7 +76,7 @@ exports.handler = async (event) => {
       positionId,
       positionTitle: body.positionTitle,
       positionCode: body.positionCode,
-      department: body.department,
+      department: body.departmentCode,
       positionLevel: body.positionLevel,
       employmentType: body.employmentType,
       reportsTo: managerData.managerId,
