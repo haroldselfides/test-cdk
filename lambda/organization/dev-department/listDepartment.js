@@ -57,7 +57,6 @@ exports.handler = async (event) => {
       'parentDepartment',
       'createdBy',
       'createdAt',
-      'departmentName'
     ];
 
     // Check if query contains unsupported/invalid keys (case-sensitive)
@@ -84,7 +83,7 @@ exports.handler = async (event) => {
     for (const key of filterableFields) {
       const multiVal = multiQuery[key];
       const singleVal = query[key];
-      
+
     // Process multi-value and single-value query parameters:
     // - For multi-value parameters, split on commas and flatten the array
     // - For single-value parameters, split on commas if present
