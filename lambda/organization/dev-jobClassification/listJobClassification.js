@@ -5,7 +5,7 @@ const { unmarshall } = require('@aws-sdk/util-dynamodb');
 const { decrypt } = require('../../utils/cryptoUtil');
 
 const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
-const tableName = process.env.TEST_ORGANIZATIONAL_TABLE_NAME;
+const tableName = process.env.ORGANIZATIONAL_TABLE_NAME;
 
 // Helper to assemble and decrypt job classification
 const assembleJobClassification = (item) => {
