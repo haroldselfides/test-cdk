@@ -1,6 +1,4 @@
-// lambda/personnel/dev-employee/createEmployee.js
-
-const { DynamoDBClient, TransactWriteItemsCommand } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient, TransactWriteItemsCommand} = require('@aws-sdk/client-dynamodb');
 const { marshall } = require('@aws-sdk/util-dynamodb');
 const { v4: uuidv4 } = require('uuid');
 const { encrypt } = require('../../utils/cryptoUtil');
@@ -23,6 +21,12 @@ const contractDetailsRequiredFields = [
 exports.handler = async (event) => {
   console.log('Received request to create a new employee.');
 
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+
   try {
     const body = JSON.parse(event.body);
 
@@ -37,6 +41,7 @@ exports.handler = async (event) => {
       console.warn('Validation failed:', validationResult.message);
       return {
         statusCode: 400,
+        headers,
         body: JSON.stringify({ message: validationResult.message }),
       };
     }
@@ -46,7 +51,6 @@ exports.handler = async (event) => {
     const pk = `EMPLOYEE#${employeeId}`;
     console.log(`Generated new employee ID: ${employeeId}`);
 
-    // Personal Data Item
     const personalDataItem = {
       PK: pk,
       SK: 'SECTION#PERSONAL_DATA',
@@ -63,7 +67,6 @@ exports.handler = async (event) => {
       status: 'ACTIVE',
     };
 
-    // Contact Info Item
     const contactInfoItem = {
       PK: pk,
       SK: 'SECTION#CONTACT_INFO',
@@ -80,7 +83,6 @@ exports.handler = async (event) => {
       emergencyContactRelationship: body.emergencyContactRelationship ? encrypt(body.emergencyContactRelationship) : undefined,
     };
 
-    // Contract Details Item
     const contractDetailsItem = {
       PK: pk,
       SK: 'SECTION#CONTRACT_DETAILS',
@@ -93,12 +95,7 @@ exports.handler = async (event) => {
       allowance: body.allowance,
     };
 
-    // --- THIS IS THE FIX ---
-    // Pass the { removeUndefinedValues: true } option to marshall to ignore optional fields
-    // that are not present in the request body.
-    const marshallOptions = {
-        removeUndefinedValues: true,
-    };
+    const marshallOptions = { removeUndefinedValues: true };
 
     const transactionParams = {
       TransactItems: [
@@ -107,7 +104,6 @@ exports.handler = async (event) => {
         { Put: { TableName: tableName, Item: marshall(contractDetailsItem, marshallOptions) } },
       ],
     };
-    // ----------------------
 
     console.log('Executing transaction to create employee records...');
     await dbClient.send(new TransactWriteItemsCommand(transactionParams));
@@ -115,16 +111,17 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 201,
+      headers,
       body: JSON.stringify({
         message: 'Employee created successfully.',
         employeeId: employeeId,
       }),
     };
-
   } catch (error) {
     console.error('An error occurred during employee creation:', error);
     return {
       statusCode: 500,
+      headers,
       body: JSON.stringify({
         message: 'Internal Server Error. Failed to create employee.',
         error: error.message,

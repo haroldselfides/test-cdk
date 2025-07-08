@@ -24,9 +24,17 @@ exports.handler = async (event) => {
   const { employeeId } = event.pathParameters;
   console.log(`Received request to update entire record for employee ID: ${employeeId}`);
 
+  // Define CORS headers for this PUT endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'PUT, OPTIONS',
+  };
+
   if (!employeeId) {
     return {
       statusCode: 400,
+      headers: headers,
       body: JSON.stringify({ message: 'Employee ID is required in the path.' }),
     };
   }
@@ -46,6 +54,7 @@ exports.handler = async (event) => {
       console.warn(`Validation failed for employee ${employeeId}:`, validationResult.message);
       return {
         statusCode: 400,
+        headers: headers,
         body: JSON.stringify({ message: validationResult.message }),
       };
     }
@@ -128,6 +137,7 @@ exports.handler = async (event) => {
     // 4. --- Return Success Response ---
     return {
       statusCode: 200,
+      headers: headers,
       body: JSON.stringify({
         message: 'Employee updated successfully.',
         employeeId: employeeId,
@@ -140,7 +150,8 @@ exports.handler = async (event) => {
       console.warn(`Transaction failed for employee ${employeeId}, likely because the employee does not exist or is not active.`);
       return {
         statusCode: 404, // Treat as "Not Found" to prevent leaking info about inactive users.
-        body: JSON.stringify({ message: 'Employee not found or is not active.' }),
+        headers: headers,
+        body: JSON.stringify({ message: 'Employee not found.' }),
       };
     }
     
@@ -148,6 +159,7 @@ exports.handler = async (event) => {
     console.error(`An error occurred during employee update for ID ${employeeId}:`, error);
     return {
       statusCode: 500,
+      headers: headers,
       body: JSON.stringify({
         message: 'Internal Server Error. Failed to update employee.',
         error: error.message,

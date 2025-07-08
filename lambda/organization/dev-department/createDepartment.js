@@ -21,6 +21,13 @@ const requiredFields = [
 
 exports.handler = async (event) => {
     console.log('Received request to create a new department.');
+
+    // Define CORS headers for this POST endpoint
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    };
     
     try {
         const body = JSON.parse(event.body);
@@ -31,6 +38,7 @@ exports.handler = async (event) => {
             console.warn('Validation failed:', validationResult.message);
             return {
                 statusCode: 400,
+                headers: headers,
                 body: JSON.stringify({ message: validationResult.message }),
             };
         }
@@ -55,6 +63,7 @@ exports.handler = async (event) => {
             console.warn(`Validation failed: Department Manager with ID ${managerId} not found.`);
             return {
                 statusCode: 400,
+                headers: headers,
                 body: JSON.stringify({ message: `Invalid input: Department Manager with ID ${managerId} not found.` }),
             };
         }
@@ -64,6 +73,7 @@ exports.handler = async (event) => {
             console.warn(`Validation failed: Department Manager with ID ${managerId} is not active.`);
             return {
                 statusCode: 400,
+                headers: headers,
                 body: JSON.stringify({ message: `Invalid input: Department Manager with ID ${managerId} is not active.` }),
             };
         }
@@ -84,6 +94,7 @@ exports.handler = async (event) => {
                 console.warn(`Validation failed: Parent Department with ID ${parentId} not found.`);
                 return {
                     statusCode: 400,
+                    headers: headers,
                     body: JSON.stringify({ message: `Invalid input: Parent Department with ID ${parentId} not found.` }),
                 };
             }
@@ -96,6 +107,7 @@ exports.handler = async (event) => {
                 console.warn(`Parent Department with ID ${parentId} does not allow sub-departments.`);
                 return {
                     statusCode: 400,
+                    headers: headers,
                     body: JSON.stringify({ message: `Invalid input: Parent Department with ID ${parentId} does not allow sub-departments.` }),
                 };
             }
@@ -144,6 +156,7 @@ exports.handler = async (event) => {
         
         return {
             statusCode: 201,
+            headers: headers,
             body: JSON.stringify({
                 message: 'Department created successfully',
                 departmentId: departmentId,
@@ -154,12 +167,14 @@ exports.handler = async (event) => {
         if (error.name === 'ConditionalCheckFailedException') {
             return {
                 statusCode: 409,
+                headers: headers,
                 body: JSON.stringify({ message: 'A department with this ID already exists, which should not happen. Please try again.' }),
             };
         }
         console.error('An error occurred during department creation:', error);
         return {
             statusCode: 500,
+            headers: headers,
             body: JSON.stringify({
                 message: 'Internal Server Error. Failed to create department.',
                 error: error.message,

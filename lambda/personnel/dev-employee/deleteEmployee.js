@@ -10,10 +10,18 @@ exports.handler = async (event) => {
   const { employeeId } = event.pathParameters;
   console.log(`Received request to archive employee ID: ${employeeId}`);
 
+  // Define CORS headers for this DELETE endpoint
+  const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'DELETE, OPTIONS',
+  };
+
   // 1. --- Input Validation ---
   if (!employeeId) {
     return {
       statusCode: 400,
+      headers: headers,
       body: JSON.stringify({ message: 'Employee ID is required in the path.' }),
     };
   }
@@ -53,6 +61,7 @@ exports.handler = async (event) => {
     // where there's nothing to return. A 200 with a message is also fine.
     return {
       statusCode: 200,
+      headers: headers,
       body: JSON.stringify({ message: 'Employee archived successfully.' }),
     };
 
@@ -63,6 +72,7 @@ exports.handler = async (event) => {
       // Return a 404 to the client. This is standard practice.
       return {
         statusCode: 404,
+        headers: headers,
         body: JSON.stringify({ message: 'Employee not found or is already inactive.' }),
       };
     }
@@ -71,6 +81,7 @@ exports.handler = async (event) => {
     console.error(`An error occurred while archiving employee ID ${employeeId}:`, error);
     return {
       statusCode: 500,
+      headers: headers,
       body: JSON.stringify({
         message: 'Internal Server Error. Failed to archive employee.',
         error: error.message,

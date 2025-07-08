@@ -20,6 +20,13 @@ const positionRequiredFields = [
 exports.handler = async (event) => {
   console.log('Received request to create a new position.');
 
+  // Define CORS headers for this POST endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+
   try {
     const body = JSON.parse(event.body);
 
@@ -29,6 +36,7 @@ exports.handler = async (event) => {
       console.warn('Validation failed:', validationResult.message);
       return {
         statusCode: 400,
+        headers: headers,
         body: JSON.stringify({ message: validationResult.message }),
       };
     }
@@ -52,6 +60,7 @@ exports.handler = async (event) => {
       console.warn(`Validation failed: Department with ID ${departmentId} not found.`);
       return {
         statusCode: 400, // Bad Request because the referenced department doesn't exist
+        headers: headers,
         body: JSON.stringify({ message: `Invalid input: Department with ID ${departmentId} not found.` }),
       };
     }
@@ -63,6 +72,7 @@ exports.handler = async (event) => {
       console.error(`Data integrity issue: Department ${departmentId} is missing a departmentManager.`);
       return {
         statusCode: 500,
+        headers: headers,
         body: JSON.stringify({ message: 'Cannot create position because the specified department has no manager assigned.' }),
       };
     }
@@ -110,6 +120,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 201,
+      headers: headers,
       body: JSON.stringify({
         message: 'Position created successfully.',
         positionId: positionId,
@@ -120,12 +131,14 @@ exports.handler = async (event) => {
     if (error.name === 'ConditionalCheckFailedException') {
         return {
             statusCode: 409,
+            headers: headers,
             body: JSON.stringify({ message: 'A position with this ID already exists. Please try again.' }),
         };
     }
     console.error('An error occurred during position creation:', error);
     return {
       statusCode: 500,
+      headers: headers,
       body: JSON.stringify({
         message: 'Internal Server Error. Failed to create position.',
         error: error.message,

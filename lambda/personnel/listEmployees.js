@@ -1,3 +1,5 @@
+// lambda/personnel/listEmployees.js
+
 const { DynamoDBClient, ScanCommand } = require('@aws-sdk/client-dynamodb');
 const { unmarshall } = require('@aws-sdk/util-dynamodb');
 const { decrypt } = require('../utils/cryptoUtil');
@@ -5,153 +7,140 @@ const { decrypt } = require('../utils/cryptoUtil');
 const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const tableName = process.env.TEST_TABLE_NAME;
 
-// Helper to assemble and decrypt employee data
-const assembleAndDecryptEmployee = (items) => {
-  if (!items || items.length === 0) return null;
-  const combinedData = items.reduce((acc, item) => ({ ...acc, ...item }), {});
-  const personalData = {
-    firstName: decrypt(combinedData.firstName),
-    lastName: decrypt(combinedData.lastName),
-    middleName: combinedData.middleName ? decrypt(combinedData.middleName) : "",
-    preferredName: combinedData.preferredName || "",
-    nationalId: decrypt(combinedData.nationalId),
-    dateOfBirth: combinedData.dateOfBirth,
-    age: combinedData.age,
-    gender: combinedData.gender,
-    nationality: combinedData.nationality,
-    maritalStatus: combinedData.maritalStatus,
-  };
-  const contactInfo = {
-    email: decrypt(combinedData.email),
-    phone: decrypt(combinedData.phone),
-    altPhone: combinedData.altPhone ? decrypt(combinedData.altPhone) : "",
-    address: decrypt(combinedData.address),
-    city: combinedData.city ? decrypt(combinedData.city) : "",
-    state: combinedData.state ? decrypt(combinedData.state) : "",
-    postalCode: combinedData.postalCode ? decrypt(combinedData.postalCode) : "",
-    country: combinedData.country ? decrypt(combinedData.country) : "",
-    emergencyContact: {
-      name: combinedData.emergencyContactName ? decrypt(combinedData.emergencyContactName) : "",
-      phone: combinedData.emergencyContactPhone ? decrypt(combinedData.emergencyContactPhone) : "",
-      relationship: combinedData.emergencyContactRelationship ? decrypt(combinedData.emergencyContactRelationship) : "",
-    }
-  };
-  const contractDetails = {
-    role: combinedData.role,
-    department: combinedData.department,
-    jobLevel: combinedData.jobLevel,
-    contractType: combinedData.contractType,
-    salaryGrade: combinedData.salaryGrade,
-    salaryPay: combinedData.salaryPay,
-    allowance: combinedData.allowance !== undefined ? combinedData.allowance : null,
-  };
-  return { personalData, contactInfo, contractDetails };
+const assembleEmployee = (items) => {
+    const combinedData = items.reduce((acc, item) => ({ ...acc, ...item }), {});
+    
+    const personalData = {
+        firstName: decrypt(combinedData.firstName),
+        lastName: decrypt(combinedData.lastName),
+        middleName: combinedData.middleName ? decrypt(combinedData.middleName) : "",
+        preferredName: combinedData.preferredName || "",
+        nationalId: decrypt(combinedData.nationalId),
+        dateOfBirth: combinedData.dateOfBirth,
+        age: combinedData.age,
+        gender: combinedData.gender,
+        nationality: combinedData.nationality,
+        maritalStatus: combinedData.maritalStatus,
+    };
+
+    const contactInfo = {
+        email: decrypt(combinedData.email),
+        phone: decrypt(combinedData.phone),
+        altPhone: combinedData.altPhone ? decrypt(combinedData.altPhone) : "",
+        address: decrypt(combinedData.address),
+        city: decrypt(combinedData.city),
+        state: decrypt(combinedData.state),
+        postalCode: decrypt(combinedData.postalCode),
+        country: decrypt(combinedData.country),
+        emergencyContactName: combinedData.emergencyContactName ? decrypt(combinedData.emergencyContactName) : "",
+        emergencyContactPhone: combinedData.emergencyContactPhone ? decrypt(combinedData.emergencyContactPhone) : "",
+        emergencyContactRelationship: combinedData.emergencyContactRelationship ? decrypt(combinedData.emergencyContactRelationship) : "",
+    };
+
+    const contractDetails = {
+        role: combinedData.role,
+        department: combinedData.department,
+        jobLevel: combinedData.jobLevel,
+        contractType: combinedData.contractType,
+        salaryGrade: combinedData.salaryGrade,
+        salaryPay: combinedData.salaryPay,
+        allowance: combinedData.allowance !== undefined ? combinedData.allowance : null,
+    };
+    
+    return {
+        employeeId: combinedData.PK.split('#')[1],
+        personalData,
+        contactInfo,
+        contractDetails,
+    };
 };
 
 exports.handler = async (event) => {
+  console.log('Request to list employees with event:', event);
+
+  // Define CORS headers for this GET endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  };
+  
   try {
     const query = event.queryStringParameters || {};
-    const { status, role, department, limit, nextToken } = query;
-    const pageLimit = limit ? parseInt(limit) : 20;
+    const limit = query.limit ? parseInt(query.limit, 10) : 20;
+    const nextToken = query.nextToken;
 
-    // Default filter for status
-    let filterExp = 'SK = :sk';
-    let expAttrVals = { ':sk': { S: 'SECTION#PERSONAL_DATA' } };
-    let expAttrNames = {};
+    const scanResult = await dbClient.send(new ScanCommand({ TableName: tableName }));
+    const allItems = scanResult.Items ? scanResult.Items.map(unmarshall) : [];
 
-    if (status) {
-      filterExp += ' AND #status = :status';
-      expAttrVals[':status'] = { S: status };
-      expAttrNames['#status'] = 'status';
-    } else {
-      filterExp += ' AND #status = :status';
-      expAttrVals[':status'] = { S: 'ACTIVE' };
-      expAttrNames['#status'] = 'status';
+    const employeesMap = new Map();
+    for (const item of allItems) {
+      if (!item.PK) continue;
+      const pk = item.PK;
+      if (!employeesMap.has(pk)) {
+        employeesMap.set(pk, []);
+      }
+      employeesMap.get(pk).push(item);
+    }
+    
+    const filteredEmployees = [];
+
+    // --- THIS IS THE UPDATED LINE ---
+    // Define the "allow-list" of fields that can be filtered. 'salaryGrade' is now included.
+    const filterableFields = [
+        'status', 'role', 'department', 'gender', 'nationality', 'maritalStatus', 
+        'jobLevel', 'contractType', 'salaryGrade'
+    ];
+    // ---------------------------------
+
+    const filtersToApply = { ...query };
+    if (!filtersToApply.status) {
+        filtersToApply.status = 'ACTIVE';
     }
 
-    // Manual pagination logic
-    let ExclusiveStartKey = undefined;
-    if (nextToken) {
-      try {
-        ExclusiveStartKey = JSON.parse(Buffer.from(nextToken, 'base64').toString('utf8'));
-      } catch (e) {
-        return { statusCode: 400, body: JSON.stringify({ message: 'Invalid nextToken' }) };
-      }
+    for (const items of employeesMap.values()) {
+        const combinedData = items.reduce((acc, item) => ({ ...acc, ...item }), {});
+        
+        const isMatch = Object.entries(filtersToApply).every(([key, value]) => {
+            if (!filterableFields.includes(key)) {
+                return true; 
+            }
+            if (combinedData[key] === undefined || combinedData[key] === null) {
+                return false;
+            }
+            return combinedData[key].toString().toLowerCase() === value.toString().toLowerCase();
+        });
+
+        if (isMatch) {
+            filteredEmployees.push(items);
+        }
     }
 
-    let collected = [];
-    let lastEvaluatedKey = ExclusiveStartKey;
-    let done = false;
-
-    while (!done && collected.length < pageLimit) {
-      const scanParams = {
-        TableName: tableName,
-        FilterExpression: filterExp,
-        ExpressionAttributeValues: expAttrVals,
-        ExpressionAttributeNames: expAttrNames,
-        Limit: Math.max(pageLimit - collected.length, 1),
-      };
-      if (lastEvaluatedKey) {
-        scanParams.ExclusiveStartKey = lastEvaluatedKey;
-      }
-      const { Items, LastEvaluatedKey } = await dbClient.send(new ScanCommand(scanParams));
-      if (Items && Items.length > 0) {
-        collected.push(...Items);
-      }
-      if (!LastEvaluatedKey) {
-        done = true;
-      } else {
-        lastEvaluatedKey = LastEvaluatedKey;
-      }
-    }
-
-    if (collected.length === 0) {
-      return { statusCode: 200, body: JSON.stringify({ employees: [], nextToken: null }) };
-    }
-
-    // Fetch all sections for each employee and filter by role and department
-    const employeePKs = collected.map(item => unmarshall(item).PK);
-    const allEmployees = [];
-    for (const pk of employeePKs) {
-      // Scan all sections for this employee
-      const { Items: empItems } = await dbClient.send(new ScanCommand({
-        TableName: tableName,
-        FilterExpression: 'PK = :pk',
-        ExpressionAttributeValues: { ':pk': { S: pk } },
-      }));
-      const unmarshalled = empItems.map(item => unmarshall(item));
-
-      // Combine all sections into a single object
-      const combinedData = unmarshalled.reduce((acc, item) => ({ ...acc, ...item }), {});
-
-      // Apply filtering for role and department
-      if (
-        (!role || combinedData.role === role) &&
-        (!department || combinedData.department === department)
-      ) {
-        allEmployees.push(assembleAndDecryptEmployee(unmarshalled));
-      }
-    }
-
-    // Apply pagination after filtering
-    const paginatedEmployees = allEmployees.slice(0, pageLimit);
-    const nextOutToken = allEmployees.length > pageLimit
-      ? Buffer.from(JSON.stringify(lastEvaluatedKey)).toString('base64')
+    const startIndex = nextToken ? parseInt(Buffer.from(nextToken, 'base64').toString('utf8')) : 0;
+    const endIndex = startIndex + limit;
+    const paginatedItems = filteredEmployees.slice(startIndex, endIndex);
+    const newNextToken = endIndex < filteredEmployees.length 
+      ? Buffer.from(endIndex.toString()).toString('base64') 
       : null;
+    const results = paginatedItems.map(employeeItems => assembleEmployee(employeeItems));
 
+    console.log(`Returning ${results.length} of ${filteredEmployees.length} filtered employees.`);
     return {
       statusCode: 200,
+      headers: headers,
       body: JSON.stringify({
-        employees: paginatedEmployees,
-        count: paginatedEmployees.length,
-        nextToken: nextOutToken
-      })
+        employees: results,
+        count: results.length,
+        nextToken: newNextToken,
+      }),
     };
+
   } catch (error) {
     console.error('Error listing employees:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ message: 'Failed to list employees', error: error.message })
+      headers: headers,
+      body: JSON.stringify({ message: 'Failed to list employees', error: error.message }),
     };
   }
 };

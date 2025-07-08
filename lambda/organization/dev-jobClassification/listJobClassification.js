@@ -5,7 +5,7 @@ const { unmarshall } = require('@aws-sdk/util-dynamodb');
 const { decrypt } = require('../../utils/cryptoUtil');
 
 const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
-const tableName = process.env.ORGANIZATIONAL_TABLE_NAME;
+const tableName = process.env.TEST_ORGANIZATIONAL_TABLE_NAME;
 
 // Helper to assemble and decrypt job classification
 const assembleJobClassification = (item) => {
@@ -22,6 +22,14 @@ const assembleJobClassification = (item) => {
 
 exports.handler = async (event) => {
     console.log('Request to list job classifications with event:', event);
+
+    // Define CORS headers for this GET endpoint
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    };
+
     try {
         const query = event.queryStringParameters || {};
         const limit = query.limit ? parseInt(query.limit, 10) : 20;
@@ -61,6 +69,7 @@ exports.handler = async (event) => {
         console.log(`Returning ${results.length} of ${filtered.length} filtered job classifications.`);
         return {
             statusCode: 200,
+            headers: headers,
             body: JSON.stringify({
                 jobClassifications: results,
                 count: results.length,
@@ -71,6 +80,7 @@ exports.handler = async (event) => {
         console.error('Error listing job classifications:', error);
         return {
             statusCode: 500,
+            headers: headers,
             body: JSON.stringify({ message: 'Failed to list job classifications', error: error.message }),
         };
     }

@@ -11,9 +11,17 @@ exports.handler = async (event) => {
   const { employeeId } = event.pathParameters;
   console.log(`Request to get personal data for employee ID: ${employeeId}`);
 
+  // Define CORS headers for this GET endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  };
+
   if (!employeeId) {
     return {
       statusCode: 400,
+      headers: headers,
       body: JSON.stringify({ message: 'Employee ID is required.' }),
     };
   }
@@ -35,7 +43,8 @@ exports.handler = async (event) => {
       console.warn(`Personal data not found for employee ID: ${employeeId}.`);
       return {
         statusCode: 404,
-        body: JSON.stringify({ message: 'Employee not found.' }),
+        headers: headers,
+        body: JSON.stringify({ message: 'Personal data not found for this employee.' }),
       };
     }
 
@@ -46,6 +55,7 @@ exports.handler = async (event) => {
       console.warn(`Employee ID: ${employeeId} is not active.`);
       return {
         statusCode: 404, // Treat inactive as not found
+        headers: headers,
         body: JSON.stringify({ message: 'Employee not found.' }),
       };
     }
@@ -67,6 +77,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
+      headers: headers,
       body: JSON.stringify({ personalData: decryptedData }),
     };
 
@@ -74,6 +85,7 @@ exports.handler = async (event) => {
     console.error('Error getting personal data:', error);
     return {
       statusCode: 500,
+      headers: headers,
       body: JSON.stringify({ message: 'Failed to retrieve personal data.', error: error.message }),
     };
   }

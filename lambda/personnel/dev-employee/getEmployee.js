@@ -78,15 +78,22 @@ const assembleAndDecryptEmployee = (items) => {
   return finalResponse;
 };
 
-
 // The main handler function remains unchanged as its logic is already correct.
 exports.handler = async (event) => {
   const { employeeId } = event.pathParameters;
   console.log(`Received request to get details for employee ID: ${employeeId}`);
 
+  // Define CORS headers for this GET endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  };
+
   if (!employeeId) {
     return {
       statusCode: 400,
+      headers: headers,
       body: JSON.stringify({ message: 'Employee ID is required.' }),
     };
   }
@@ -109,6 +116,7 @@ exports.handler = async (event) => {
       console.warn(`No records found for employee ID: ${employeeId}.`);
       return {
         statusCode: 404,
+        headers: headers,
         body: JSON.stringify({ message: 'Employee not found.' }),
       };
     }
@@ -121,7 +129,8 @@ exports.handler = async (event) => {
       console.warn(`Employee ID: ${employeeId} is not active or personal data is missing.`);
       return {
         statusCode: 404,
-        body: JSON.stringify({ message: 'Employee not found or is not active.' }),
+        headers: headers,
+        body: JSON.stringify({ message: 'Employee not found.' }),
       };
     }
     console.log(`Employee ID: ${employeeId} is active. Proceeding with data assembly.`);
@@ -131,6 +140,7 @@ exports.handler = async (event) => {
     console.log(`Successfully retrieved and decrypted data for employee ID: ${employeeId}`);
     return {
       statusCode: 200,
+      headers: headers,
       body: JSON.stringify(employeeDetails),
     };
 
@@ -138,6 +148,7 @@ exports.handler = async (event) => {
     console.error('An error occurred while getting employee details:', error);
     return {
       statusCode: 500,
+      headers: headers,
       body: JSON.stringify({
         message: 'Internal Server Error. Failed to retrieve employee details.',
         error: error.message,

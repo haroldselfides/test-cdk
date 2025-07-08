@@ -8,7 +8,7 @@ const { validateBody } = require('../../utils/validationUtil');
 const { getRequestingUser } = require('../../utils/authUtil');
 
 const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
-const tableName = process.env.ORGANIZATIONAL_TABLE_NAME;
+const tableName = process.env.TEST_ORGANIZATIONAL_TABLE_NAME;
 
 // Define required fields based on the "Job Classification" schema
 const requiredFields = [
@@ -17,6 +17,13 @@ const requiredFields = [
 
 exports.handler = async (event) => {
     console.log('Received request to create a new job classification.');
+
+    // Define CORS headers for this POST endpoint
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    };
     
     try {
         const body = JSON.parse(event.body);
@@ -27,6 +34,7 @@ exports.handler = async (event) => {
             console.warn('Validation failed:', validationResult.message);
             return {
                 statusCode: 400,
+                headers: headers,
                 body: JSON.stringify({ message: validationResult.message }),
             };
         }
@@ -69,6 +77,7 @@ exports.handler = async (event) => {
         
         return {
             statusCode: 201,
+            headers: headers,
             body: JSON.stringify({
                 message: 'Job classification created successfully.',
                 jobClassificationId: jobClassificationId,
@@ -80,12 +89,14 @@ exports.handler = async (event) => {
             console.error('Data collision: An item with this key already exists.');
             return {
                 statusCode: 409, // Conflict
+                headers: headers,
                 body: JSON.stringify({ message: 'A job classification with this ID already exists, which should not happen. Please try again.' }),
             };
         }
         console.error('An error occurred during job classification creation:', error);
         return {
             statusCode: 500,
+            headers: headers,
             body: JSON.stringify({
                 message: 'Internal Server Error. Failed to create job classification.',
                 error: error.message,

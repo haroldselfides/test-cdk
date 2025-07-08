@@ -11,9 +11,17 @@ exports.handler = async (event) => {
     const { positionId } = event.pathParameters;
     console.log(`Request to get position with ID: ${positionId}`);
 
+    // Define CORS headers for this GET endpoint
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    };
+
     if (!positionId) {
         return {
             statusCode: 400,
+            headers: headers,
             body: JSON.stringify({ message: 'Position ID is required.' }),
         };
     }
@@ -35,6 +43,7 @@ exports.handler = async (event) => {
             console.warn(`Position not found for ID: ${positionId}.`);
             return {
                 statusCode: 404,
+                headers: headers,
                 body: JSON.stringify({ message: 'Position not found.' }),
             };
         }
@@ -68,8 +77,10 @@ exports.handler = async (event) => {
             createdAt: positionData.createdAt,
         };
 
+        console.log(`Successfully retrieved and decrypted position ID: ${positionId}`);
         return {
             statusCode: 200,
+            headers: headers,
             body: JSON.stringify({ position: decryptedData }),
         };
 
@@ -77,6 +88,7 @@ exports.handler = async (event) => {
         console.error('Error getting position:', error);
         return {
             statusCode: 500,
+            headers: headers,
             body: JSON.stringify({ message: 'Failed to retrieve position.', error: error.message }),
         };
     }

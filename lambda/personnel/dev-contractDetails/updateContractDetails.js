@@ -1,4 +1,4 @@
-// lambda/personnel/dev-employee/updateContractDetails.js
+// lambda/personnel/dev-contractDetails/updateContractDetails.js
 
 const { DynamoDBClient, TransactWriteItemsCommand } = require('@aws-sdk/client-dynamodb');
 const { marshall } = require('@aws-sdk/util-dynamodb');
@@ -7,94 +7,122 @@ const { validateBody } = require('../../utils/validationUtil');
 const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const tableName = process.env.TEST_TABLE_NAME;
 
-// Fields allowed in contract details section
-const contractDetailsRequiredFields = [
+// Required fields for just this section
+const requiredFields = [
   'role', 'department', 'jobLevel', 'contractType', 'salaryGrade', 'salaryPay'
 ];
 
 exports.handler = async (event) => {
   const { employeeId } = event.pathParameters;
-  console.log(`Received request to update contract details for employee ID: ${employeeId}`);
+  console.log(`Request to update contract details for employee ID: ${employeeId}`);
+
+  // Define CORS headers for this PUT endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'PUT, OPTIONS',
+  };
 
   if (!employeeId) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ message: 'Employee ID is required in the path.' }),
+      headers: headers,
+      body: JSON.stringify({ message: 'Employee ID is required.' }),
     };
   }
 
   try {
     const body = JSON.parse(event.body);
 
-    // Validate only the contract fields that are required
-    const validationResult = validateBody(body, contractDetailsRequiredFields);
-
+    // 1. --- Input Validation ---
+    const validationResult = validateBody(body, requiredFields);
     if (!validationResult.isValid) {
-      console.warn(`Validation failed for contract update of employee ${employeeId}:`, validationResult.message);
+      console.warn('Validation failed:', validationResult.message);
       return {
         statusCode: 400,
+        headers: headers,
         body: JSON.stringify({ message: validationResult.message }),
       };
     }
+    console.log(`Input validation passed for ${employeeId}.`);
 
-    console.log(`Validation passed. Proceeding to update contract section for employee ${employeeId}.`);
-
-    const pk = `EMPLOYEE#${employeeId}`;
-
-    const contractDetailsItem = {
-      PK: pk,
-      SK: 'SECTION#CONTRACT_DETAILS',
+    // 2. --- Dynamically Build Update Expression ---
+    const updateExpressionParts = [];
+    const expressionAttributeValues = {};
+    const expressionAttributeNames = {};
+    
+    // All fields in this section are plaintext
+    const fieldsToUpdate = {
       role: body.role,
       department: body.department,
       jobLevel: body.jobLevel,
       contractType: body.contractType,
       salaryGrade: body.salaryGrade,
       salaryPay: body.salaryPay,
-      allowance: body.allowance, // Optional field (can be undefined or null)
     };
+    
+    // Handle optional 'allowance' field by checking for key existence
+    if (body.hasOwnProperty('allowance')) {
+        fieldsToUpdate.allowance = body.allowance;
+    }
 
-    const marshallOptions = { removeUndefinedValues: true };
+    for (const [field, value] of Object.entries(fieldsToUpdate)) {
+        const valueKey = `:${field}`;
+        const nameKey = `#${field}`;
+        updateExpressionParts.push(`${nameKey} = ${valueKey}`);
+        expressionAttributeValues[valueKey] = value;
+        expressionAttributeNames[nameKey] = field;
+    }
 
+    // 3. --- Construct and Execute Atomic Transaction ---
+    const pk = `EMPLOYEE#${employeeId}`;
     const transactionParams = {
       TransactItems: [
         {
-          Put: {
+          ConditionCheck: {
             TableName: tableName,
-            Item: marshall(contractDetailsItem, marshallOptions),
-            ConditionExpression: 'attribute_exists(PK)', // Ensure employee exists
-          },
+            Key: marshall({ PK: pk, SK: 'SECTION#PERSONAL_DATA' }),
+            ConditionExpression: '#status = :activeStatus',
+            ExpressionAttributeNames: { '#status': 'status' },
+            ExpressionAttributeValues: marshall({ ':activeStatus': 'ACTIVE' }),
+          }
+        },
+        {
+          Update: {
+            TableName: tableName,
+            Key: marshall({ PK: pk, SK: 'SECTION#CONTRACT_DETAILS' }),
+            UpdateExpression: `SET ${updateExpressionParts.join(', ')}`,
+            ExpressionAttributeNames: expressionAttributeNames,
+            ExpressionAttributeValues: marshall(expressionAttributeValues),
+          }
         }
       ]
     };
 
-    console.log(`Executing transaction to update contract section for employee ${employeeId}...`);
+    console.log(`Executing transaction to update contract details for ${employeeId}...`);
     await dbClient.send(new TransactWriteItemsCommand(transactionParams));
-    console.log(`Successfully updated contract section for employee ID: ${employeeId}`);
+    console.log(`Successfully updated contract details for ${employeeId}.`);
 
     return {
       statusCode: 200,
-      body: JSON.stringify({
-        message: 'Contract details updated successfully.',
-        employeeId: employeeId,
-      }),
+      headers: headers,
+      body: JSON.stringify({ message: 'Contract details updated successfully.' }),
     };
 
   } catch (error) {
     if (error.name === 'TransactionCanceledException') {
-      console.warn(`Contract update failed. Employee ${employeeId} not found or does not exist.`);
+      console.warn(`Update failed for ${employeeId}, employee not found or not active.`);
       return {
         statusCode: 404,
-        body: JSON.stringify({ message: 'Employee not found or is not active.' }),
+        headers: headers,
+        body: JSON.stringify({ message: 'Employee not found.' }),
       };
     }
-
-    console.error(`An error occurred while updating contract details for employee ID ${employeeId}:`, error);
+    console.error('Error updating contract details:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({
-        message: 'Internal Server Error. Failed to update contract details.',
-        error: error.message,
-      }),
+      headers: headers,
+      body: JSON.stringify({ message: 'Failed to update contract details.', error: error.message }),
     };
   }
-}  ;
+};

@@ -1,92 +1,105 @@
-// lambda/personnel/dev-employee/getContactDetails.js
+// lambda/personnel/dev-contactInfo/getContactInfo.js
 
-const { DynamoDBClient, QueryCommand } = require('@aws-sdk/client-dynamodb');
-const { unmarshall } = require('@aws-sdk/util-dynamodb');
+const { DynamoDBClient, GetItemCommand } = require('@aws-sdk/client-dynamodb');
+const { marshall, unmarshall } = require('@aws-sdk/util-dynamodb');
 const { decrypt } = require('../../utils/cryptoUtil');
 
 const dbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const tableName = process.env.TEST_TABLE_NAME;
 
-const extractContactInfo = (item) => ({
-  email: item.email ? decrypt(item.email) : null,
-  phone: item.phone ? decrypt(item.phone) : null,
-  altPhone: item.altPhone ? decrypt(item.altPhone) : null,
-  address: item.address ? decrypt(item.address) : null,
-  city: item.city ? decrypt(item.city) : null,
-  state: item.state ? decrypt(item.state) : null,
-  postalCode: item.postalCode ? decrypt(item.postalCode) : null,
-  country: item.country ? decrypt(item.country) : null,
-  emergencyContact: {
-    name: item.emergencyContactName ? decrypt(item.emergencyContactName) : null,
-    phone: item.emergencyContactPhone ? decrypt(item.emergencyContactPhone) : null,
-    relationship: item.emergencyContactRelationship ? decrypt(item.emergencyContactRelationship) : null,
-  }
-});
-
 exports.handler = async (event) => {
   const { employeeId } = event.pathParameters;
-  console.log(`Received request to get contact information for employee ID: ${employeeId}`);
+  console.log(`Request to get contact info for employee ID: ${employeeId}`);
+
+  // Define CORS headers for this GET endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  };
 
   if (!employeeId) {
     return {
       statusCode: 400,
+      headers: headers,
       body: JSON.stringify({ message: 'Employee ID is required.' }),
     };
   }
 
   const pk = `EMPLOYEE#${employeeId}`;
 
-  const queryParams = {
-    TableName: tableName,
-    KeyConditionExpression: 'PK = :pk',
-    ExpressionAttributeValues: {
-      ':pk': { S: pk },
-    },
-  };
-
   try {
-    const { Items } = await dbClient.send(new QueryCommand(queryParams));
+    // 1. --- Perform "Active Check" on the Personal Data item first ---
+    const personalDataKey = { PK: pk, SK: 'SECTION#PERSONAL_DATA' };
+    const checkCommand = new GetItemCommand({
+      TableName: tableName,
+      Key: marshall(personalDataKey),
+      ProjectionExpression: '#status', // Only fetch the status attribute for efficiency
+      ExpressionAttributeNames: { '#status': 'status' },
+    });
 
-    if (!Items || Items.length === 0) {
+    const { Item: personalDataItem } = await dbClient.send(checkCommand);
+
+    if (!personalDataItem || unmarshall(personalDataItem).status !== 'ACTIVE') {
+      console.warn(`Employee ${employeeId} not found or is not active.`);
       return {
         statusCode: 404,
+        headers: headers,
         body: JSON.stringify({ message: 'Employee not found.' }),
       };
     }
+    console.log(`Employee ${employeeId} is active. Proceeding to fetch contact info.`);
 
-    const unmarshalledItems = Items.map(item => unmarshall(item));
-    const personalItem = unmarshalledItems.find(item => item.SK === 'SECTION#PERSONAL_DATA');
-    const contactItem = unmarshalledItems.find(item => item.SK === 'SECTION#CONTACT_INFO');
+    // 2. --- If active, fetch the Contact Info item ---
+    const contactInfoKey = { PK: pk, SK: 'SECTION#CONTACT_INFO' };
+    const getCommand = new GetItemCommand({
+      TableName: tableName,
+      Key: marshall(contactInfoKey),
+    });
 
-    if (!personalItem || personalItem.status !== 'ACTIVE') {
-      return {
-        statusCode: 403,
-        body: JSON.stringify({ message: 'Unable to perform action. This employee is inactive.' }),
-      };
-    }
+    const { Item } = await dbClient.send(getCommand);
 
-    if (!contactItem) {
+    if (!Item) {
+      // This case might happen if data is inconsistent, but we handle it gracefully.
+      console.error(`Data inconsistency: Active employee ${employeeId} is missing contact info.`);
       return {
         statusCode: 404,
-        body: JSON.stringify({ message: 'Contact information not found.' }),
+        headers: headers,
+        body: JSON.stringify({ message: 'Contact information not found for this employee.' }),
       };
     }
 
-    const contactInfo = extractContactInfo(contactItem);
+    const contactInfo = unmarshall(Item);
+
+    // 3. --- Decrypt and Structure the Final Response ---
+    const decryptedData = {
+      email: decrypt(contactInfo.email),
+      phone: decrypt(contactInfo.phone),
+      altPhone: contactInfo.altPhone ? decrypt(contactInfo.altPhone) : "",
+      address: decrypt(contactInfo.address),
+      city: decrypt(contactInfo.city),
+      state: decrypt(contactInfo.state),
+      postalCode: decrypt(contactInfo.postalCode),
+      country: decrypt(contactInfo.country),
+      emergencyContact: {
+        name: contactInfo.emergencyContactName ? decrypt(contactInfo.emergencyContactName) : "",
+        phone: contactInfo.emergencyContactPhone ? decrypt(contactInfo.emergencyContactPhone) : "",
+        relationship: contactInfo.emergencyContactRelationship ? decrypt(contactInfo.emergencyContactRelationship) : "",
+      }
+    };
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ contactInfo }),
+      headers: headers,
+      body: JSON.stringify({ contactInfo: decryptedData }),
     };
 
   } catch (error) {
-    console.error('Error retrieving contact information:', error);
+    console.error('Error getting contact info:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({
-        message: 'Internal Server Error. Failed to retrieve contact information.',
-        error: error.message,
-      }),
+      headers: headers,
+      body: JSON.stringify({ message: 'Failed to retrieve contact info.', error: error.message }),
     };
   }
 };

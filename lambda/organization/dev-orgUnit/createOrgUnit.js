@@ -18,9 +18,17 @@ exports.handler = async (event) => {
   const { id: departmentId } = event.pathParameters;
   console.log(`Request to create an organizational unit for department ID: ${departmentId}`);
 
+  // Define CORS headers for this POST endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+
   if (!departmentId) {
     return {
       statusCode: 400,
+      headers: headers,
       body: JSON.stringify({ message: 'Department ID is required in the URL path.' }),
     };
   }
@@ -34,6 +42,7 @@ exports.handler = async (event) => {
       console.warn('Validation failed:', validationResult.message);
       return {
         statusCode: 400,
+        headers: headers,
         body: JSON.stringify({ message: validationResult.message }),
       };
     }
@@ -53,6 +62,7 @@ exports.handler = async (event) => {
       console.warn(`Validation failed: Department with ID ${departmentId} not found.`);
       return {
         statusCode: 404,
+        headers: headers,
         body: JSON.stringify({ message: `Department with ID ${departmentId} not found.` }),
       };
     }
@@ -64,6 +74,7 @@ exports.handler = async (event) => {
       console.error(`Data integrity issue: Department ${departmentId} is missing a costCenter.`);
       return {
         statusCode: 500, // This is a server-side data issue, not a client error
+        headers: headers,
         body: JSON.stringify({ message: 'Cannot create unit because the parent department has no cost center assigned.' }),
       };
     }
@@ -103,6 +114,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 201,
+      headers: headers,
       body: JSON.stringify({
         message: 'Organizational Unit created successfully.',
         unitId: unitId,
@@ -113,12 +125,14 @@ exports.handler = async (event) => {
     if (error.name === 'ConditionalCheckFailedException') {
       return {
         statusCode: 409,
+        headers: headers,
         body: JSON.stringify({ message: 'An organizational unit with this ID already exists. Please try again.' }),
       };
     }
     console.error('An error occurred during organizational unit creation:', error);
     return {
       statusCode: 500,
+      headers: headers,
       body: JSON.stringify({
         message: 'Internal Server Error. Failed to create organizational unit.',
         error: error.message,

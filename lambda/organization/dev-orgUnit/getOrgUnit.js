@@ -11,9 +11,17 @@ exports.handler = async (event) => {
   const { unitId } = event.pathParameters;
   console.log(`Received request to get org unit ID: ${unitId}`);
 
+  // Define CORS headers for this GET endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  };
+
   if (!unitId) {
     return {
       statusCode: 400,
+      headers: headers,
       body: JSON.stringify({ message: 'Organizational Unit ID is required.' }),
     };
   }
@@ -34,6 +42,7 @@ exports.handler = async (event) => {
       console.warn(`No org unit found for ID: ${unitId}`);
       return {
         statusCode: 404,
+        headers: headers,
         body: JSON.stringify({ message: 'Organizational Unit not found.' }),
       };
     }
@@ -55,6 +64,7 @@ exports.handler = async (event) => {
     console.log(`Successfully retrieved org unit: ${unitId}`);
     return {
       statusCode: 200,
+      headers: headers,
       body: JSON.stringify({ orgUnit: orgUnitDetails }),
     };
 
@@ -62,6 +72,7 @@ exports.handler = async (event) => {
     console.error('Error fetching org unit:', error);
     return {
       statusCode: 500,
+      headers: headers,
       body: JSON.stringify({
         message: 'Internal Server Error. Failed to retrieve org unit.',
         error: error.message,

@@ -18,9 +18,17 @@ exports.handler = async (event) => {
   const { employeeId } = event.pathParameters;
   console.log(`Request to update personal data for employee ID: ${employeeId}`);
 
+  // Define CORS headers for this PUT endpoint
+  const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'PUT, OPTIONS',
+  };
+
   if (!employeeId) {
     return {
       statusCode: 400,
+      headers: headers,
       body: JSON.stringify({ message: 'Employee ID is required.' }),
     };
   }
@@ -34,19 +42,19 @@ exports.handler = async (event) => {
       console.warn('Validation failed:', validationResult.message);
       return {
         statusCode: 400,
+        headers: headers,
         body: JSON.stringify({ message: validationResult.message }),
       };
     }
     console.log(`Input validation passed for ${employeeId}.`);
 
     // 2. --- Dynamically Build Update Expression ---
-    // This allows for partial updates (like a PATCH) where not all fields need to be sent.
     const updateExpressionParts = [];
     const expressionAttributeValues = {};
     const expressionAttributeNames = {};
 
-    // Map body fields to expression parts, encrypting where necessary
-    const fieldsToUpdate = {
+    // Map required fields
+    const requiredFieldsToUpdate = {
       firstName: encrypt(body.firstName),
       lastName: encrypt(body.lastName),
       nationalId: encrypt(body.nationalId),
@@ -55,26 +63,27 @@ exports.handler = async (event) => {
       gender: body.gender,
       nationality: body.nationality,
       maritalStatus: body.maritalStatus,
-      // Optional fields
-      ...(body.middleName && { middleName: encrypt(body.middleName) }),
-      ...(body.preferredName && { preferredName: body.preferredName }),
     };
+    
+    // Handle optional fields: check for key existence, not truthiness.
+    // This allows updating a field to an empty string.
+    const optionalFieldsToUpdate = {};
+    if (body.hasOwnProperty('middleName')) {
+        optionalFieldsToUpdate.middleName = encrypt(body.middleName);
+    }
+    if (body.hasOwnProperty('preferredName')) {
+        optionalFieldsToUpdate.preferredName = body.preferredName;
+    }
 
+    const fieldsToUpdate = { ...requiredFieldsToUpdate, ...optionalFieldsToUpdate };
+
+    // Build the expression from all fields provided
     for (const [field, value] of Object.entries(fieldsToUpdate)) {
-      if (value !== undefined) {
         const valueKey = `:${field}`;
         const nameKey = `#${field}`;
         updateExpressionParts.push(`${nameKey} = ${valueKey}`);
         expressionAttributeValues[valueKey] = value;
         expressionAttributeNames[nameKey] = field;
-      }
-    }
-
-    if (updateExpressionParts.length === 0) {
-        return {
-            statusCode: 400,
-            body: JSON.stringify({ message: "No valid fields provided for update."})
-        }
     }
 
     // 3. --- Construct and Execute Atomic Update ---
@@ -85,7 +94,6 @@ exports.handler = async (event) => {
         SK: 'SECTION#PERSONAL_DATA',
       }),
       UpdateExpression: `SET ${updateExpressionParts.join(', ')}`,
-      // This condition ensures the update only happens if the employee is active
       ConditionExpression: '#status = :activeStatus',
       ExpressionAttributeNames: { ...expressionAttributeNames, '#status': 'status' },
       ExpressionAttributeValues: marshall({
@@ -101,6 +109,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
+      headers: headers,
       body: JSON.stringify({ message: 'Personal data updated successfully.' }),
     };
   } catch (error) {
@@ -108,12 +117,14 @@ exports.handler = async (event) => {
       console.warn(`Update failed for ${employeeId}, employee not found or not active.`);
       return {
         statusCode: 404,
-        body: JSON.stringify({ message: 'Employee not found.' }),
+        headers: headers,
+        body: JSON.stringify({ message: 'Employee not found or is not active.' }),
       };
     }
     console.error('Error updating personal data:', error);
     return {
       statusCode: 500,
+      headers: headers,
       body: JSON.stringify({ message: 'Failed to update personal data.', error: error.message }),
     };
   }
