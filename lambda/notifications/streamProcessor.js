@@ -31,14 +31,14 @@ exports.handler = async (event) => {
       const contactData = contactInfo.Item ? unmarshall(contactInfo.Item) : {};
       const email = contactData.email || 'no-email@example.com';
 
-      const payload = {
-        employeeId,
-        firstName: newImage.firstName,
-        lastName: newImage.lastName,
-        position: newImage.positionTitle || '',
-        email,
-        notifyAdmin: true,
-      };
+     const payload = {
+      type: 'WELCOME',
+      employeeId,
+      firstName: newImage.firstName,
+      lastName: newImage.lastName,
+      position: newImage.positionTitle || '',
+      email,
+    };
 
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: QUEUE_URL,
