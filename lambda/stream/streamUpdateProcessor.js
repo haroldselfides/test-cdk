@@ -4,7 +4,7 @@ const { unmarshall } = require('@aws-sdk/util-dynamodb');
 const { SQSClient, SendMessageCommand } = require('@aws-sdk/client-sqs');
 
 const sqsClient = new SQSClient({});
-// ✅ FIX: Use the specific environment variable for the update notification queue.
+//  FIX: Use the specific environment variable for the update notification queue.
 const QUEUE_URL = process.env.EMPLOYEE_UPDATE_NOTIFICATION_QUEUE_URL;
 
 exports.handler = async (event) => {

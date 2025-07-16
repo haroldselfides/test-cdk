@@ -1,11 +1,3 @@
-/**
- * @file notifyAdmin.js
- * @description This Lambda is triggered by SQS messages from the employee update pipeline.
- * It formats and sends an email notification to the administrator via SES,
- * detailing the changes made to an employee record. It intelligently decrypts
- * only the fields that are known to be encrypted.
- */
-
 const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 const { decrypt } = require('../utils/cryptoUtil'); // Ensure this path is correct
 
@@ -13,7 +5,7 @@ const sesClient = new SESClient({});
 const ADMIN_EMAIL_TO = process.env.HR_ADMIN_EMAIL;
 const SENDER_EMAIL_FROM = process.env.HR_ADMIN_EMAIL_FROM;
 
-// ✅ FIX 1: Define which fields are encrypted.
+//  FIX 1: Define which fields are encrypted.
 // This list should match the fields you encrypt in your create/update functions.
 const ENCRYPTED_FIELDS_KEYWORDS = [
   'firstName', 'lastName', 'middleName', 'nationalId', 'email', 'phone', 
@@ -41,7 +33,7 @@ exports.handler = async (event) => {
           let oldFormatted = old;
           let newFormatted = newVal;
 
-          // ✅ FIX 2: Check if the field name contains any of our encrypted keywords.
+          //  FIX 2: Check if the field name contains any of our encrypted keywords.
           const isEncrypted = ENCRYPTED_FIELDS_KEYWORDS.some(keyword => field.includes(keyword));
 
           if (isEncrypted) {
