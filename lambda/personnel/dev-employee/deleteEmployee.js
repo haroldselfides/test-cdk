@@ -1,4 +1,10 @@
-// lambda/personnel/dev-employee/deleteEmployee.js
+/**
+ * @file deleteEmployee.js
+ * @description Handles the soft deletion (archiving) of an employee record.
+ * This function updates the employee's status to 'INACTIVE' but does not permanently
+ * remove their data. It uses a conditional update to ensure only active employees
+ * can be deactivated. This change will trigger the DynamoDB Stream for notifications.
+ */
 
 const { DynamoDBClient, UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
 const { marshall } = require('@aws-sdk/util-dynamodb');
@@ -8,7 +14,6 @@ const tableName = process.env.TEST_TABLE_NAME;
 
 exports.handler = async (event) => {
   const { employeeId } = event.pathParameters;
-  console.log(`Received request to archive employee ID: ${employeeId}`);
 
   // Define CORS headers for this DELETE endpoint
   const headers = {
@@ -25,20 +30,22 @@ exports.handler = async (event) => {
       body: JSON.stringify({ message: 'Employee ID is required in the path.' }),
     };
   }
+  
+  const pk = `EMPLOYEE#${employeeId}`;
 
-  // 2. --- Construct Update Parameters ---
+  // 2. --- Construct Update Parameters for Soft Delete ---
   // This command targets the specific personal data item and updates only its status.
   const params = {
     TableName: tableName,
     Key: marshall({
-      PK: `EMPLOYEE#${employeeId}`,
-      SK: 'SECTION#PERSONAL_DATA', // The 'status' attribute lives here
+      PK: pk,
+      SK: 'SECTION#PERSONAL_DATA', // The 'status' attribute lives on this item
     }),
     // The UpdateExpression sets the 'status' attribute to the new value 'INACTIVE'.
     UpdateExpression: 'SET #status = :inactiveStatus',
-    // The ConditionExpression ensures this operation only succeeds if the current status is 'ACTIVE'.
-    // This prevents archiving an already archived user or a non-existent one.
-    ConditionExpression: '#status = :activeStatus',
+    // The ConditionExpression is crucial: it ensures this operation only succeeds if the
+    // employee exists and their current status is 'ACTIVE'.
+    ConditionExpression: 'attribute_exists(PK) AND #status = :activeStatus',
     ExpressionAttributeNames: {
       '#status': 'status',
     },
@@ -46,30 +53,28 @@ exports.handler = async (event) => {
       ':inactiveStatus': 'INACTIVE',
       ':activeStatus': 'ACTIVE',
     }),
-    // We don't need the old or new values back, so we set ReturnValues to NONE for efficiency.
-    ReturnValues: 'NONE',
   };
 
   try {
     // 3. --- Execute the Atomic Update ---
-    console.log(`Executing update to archive employee ${employeeId}...`);
+    console.log(`Executing soft delete for employee ${employeeId}...`);
     await dbClient.send(new UpdateItemCommand(params));
-    console.log(`Successfully archived employee with ID: ${employeeId}`);
+    
+    // SUCCESS: This critical status change is now recorded in the DynamoDB Stream,
+    // which will trigger the admin notification process.
+    console.log(`Successfully deactivated employee with ID: ${employeeId}.`);
 
     // 4. --- Return Success Response ---
-    // A 204 No Content response is often appropriate for a successful DELETE action
-    // where there's nothing to return. A 200 with a message is also fine.
     return {
       statusCode: 200,
       headers: headers,
-      body: JSON.stringify({ message: 'Employee archived successfully.' }),
+      body: JSON.stringify({ message: 'Employee deactivated successfully.' }),
     };
 
   } catch (error) {
-    // This specific error name means our ConditionExpression failed.
+    // This specific error name means our ConditionExpression failed. This is expected.
     if (error.name === 'ConditionalCheckFailedException') {
-      console.warn(`Attempted to archive employee ${employeeId}, but they are not active or do not exist.`);
-      // Return a 404 to the client. This is standard practice.
+      console.warn(`Attempted to deactivate employee ${employeeId}, but they are not active or do not exist.`);
       return {
         statusCode: 404,
         headers: headers,
@@ -78,14 +83,12 @@ exports.handler = async (event) => {
     }
 
     // Handle any other unexpected errors.
-    console.error(`An error occurred while archiving employee ID ${employeeId}:`, error);
+    console.error(`An error occurred while deactivating employee ID ${employeeId}:`, error);
     return {
       statusCode: 500,
       headers: headers,
-      body: JSON.stringify({
-        message: 'Internal Server Error. Failed to archive employee.',
-        error: error.message,
-      }),
+      // SECURITY BEST PRACTICE: Avoid leaking internal error details to the client.
+      body: JSON.stringify({ message: 'Internal Server Error.' }),
     };
   }
 };

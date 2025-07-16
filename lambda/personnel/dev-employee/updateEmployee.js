@@ -1,4 +1,10 @@
-// lambda/personnel/dev-employee/updateEmployee.js
+/**
+ * @file updateEmployee.js
+ * @description Handles the full replacement (PUT) of an existing, active employee record.
+ * This function validates that all required fields are present and uses a DynamoDB
+ * transaction to ensure all sections of the employee record are updated atomically.
+ * A successful update to the database will trigger the DynamoDB Stream for notifications.
+ */
 
 const { DynamoDBClient, TransactWriteItemsCommand } = require('@aws-sdk/client-dynamodb');
 const { marshall } = require('@aws-sdk/util-dynamodb');
@@ -22,9 +28,8 @@ const contractDetailsRequiredFields = [
 
 exports.handler = async (event) => {
   const { employeeId } = event.pathParameters;
-  console.log(`Received request to update entire record for employee ID: ${employeeId}`);
 
-  // Define CORS headers for this PUT endpoint
+  // Define CORS headers for this specific PUT endpoint
   const headers = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -38,6 +43,8 @@ exports.handler = async (event) => {
       body: JSON.stringify({ message: 'Employee ID is required in the path.' }),
     };
   }
+  
+  const pk = `EMPLOYEE#${employeeId}`;
 
   try {
     const body = JSON.parse(event.body);
@@ -60,9 +67,7 @@ exports.handler = async (event) => {
     }
     console.log(`Input validation passed for employee ${employeeId}.`);
 
-    // 2. --- Prepare Data Items with Encryption ---
-    const pk = `EMPLOYEE#${employeeId}`;
-
+    // 2. --- Prepare Data Items with Encryption (same as your original, correct logic) ---
     const personalDataItem = {
       PK: pk,
       SK: 'SECTION#PERSONAL_DATA',
@@ -107,11 +112,8 @@ exports.handler = async (event) => {
       allowance: body.allowance,
     };
 
-    // 3. --- Construct and Execute Corrected Atomic Transaction ---
+    // 3. --- Construct and Execute Atomic Transaction ---
     const marshallOptions = { removeUndefinedValues: true };
-    
-    // The transaction is now simpler and compliant. We embed the condition check
-    // directly into the 'Put' operation for the personal data item.
     const transactionParams = {
       TransactItems: [
         {
@@ -124,15 +126,17 @@ exports.handler = async (event) => {
             ExpressionAttributeValues: marshall({ ':activeStatus': 'ACTIVE' }),
           }
         },
-        // The other Put operations will replace their respective items.
         { Put: { TableName: tableName, Item: marshall(contactInfoItem, marshallOptions) } },
         { Put: { TableName: tableName, Item: marshall(contractDetailsItem, marshallOptions) } },
       ],
     };
 
-    console.log(`Executing transaction to update employee ${employeeId}...`);
+    console.log(`Executing transaction to update (PUT) employee ${employeeId}...`);
     await dbClient.send(new TransactWriteItemsCommand(transactionParams));
-    console.log(`Successfully updated employee with ID: ${employeeId}`);
+    
+    // SUCCESS: This database change now creates an event in the DynamoDB Stream.
+    // That stream event is the trigger for your separate notification system.
+    console.log(`Successfully updated employee with ID: ${employeeId}. Notification process initiated.`);
 
     // 4. --- Return Success Response ---
     return {
@@ -147,23 +151,22 @@ exports.handler = async (event) => {
   } catch (error) {
     if (error.name === 'TransactionCanceledException') {
       // This error means our ConditionExpression failed.
-      console.warn(`Transaction failed for employee ${employeeId}, likely because the employee does not exist or is not active.`);
+      console.warn(`Transaction for employee ${employeeId} failed. Employee not found or is inactive.`);
       return {
-        statusCode: 404, // Treat as "Not Found" to prevent leaking info about inactive users.
+        statusCode: 404,
         headers: headers,
-        body: JSON.stringify({ message: 'Employee not found.' }),
+        body: JSON.stringify({ message: 'Employee not found or is inactive.' }),
       };
     }
+    if (error instanceof SyntaxError) {
+        return { statusCode: 400, headers, body: JSON.stringify({ message: 'Invalid JSON in request body.' })};
+    }
     
-    // Catch JSON parsing errors or other unexpected issues
-    console.error(`An error occurred during employee update for ID ${employeeId}:`, error);
+    console.error(`An unhandled error occurred during PUT for employee ${employeeId}:`, error);
     return {
       statusCode: 500,
-      headers: headers,
-      body: JSON.stringify({
-        message: 'Internal Server Error. Failed to update employee.',
-        error: error.message,
-      }),
+      headers,
+      body: JSON.stringify({ message: 'Internal Server Error.' }),
     };
   }
 };

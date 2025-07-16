@@ -4,66 +4,69 @@ const { unmarshall } = require('@aws-sdk/util-dynamodb');
 const { SQSClient, SendMessageCommand } = require('@aws-sdk/client-sqs');
 
 const sqsClient = new SQSClient({});
-const QUEUE_URL = process.env.EMPLOYEE_NOTIFICATION_QUEUE_URL;
+// ✅ FIX: Use the specific environment variable for the update notification queue.
+const QUEUE_URL = process.env.EMPLOYEE_UPDATE_NOTIFICATION_QUEUE_URL;
 
 exports.handler = async (event) => {
-  console.log("Stream event received:", JSON.stringify(event, null, 2)); // Debug full event
+  console.log("Stream event received for update processing:", JSON.stringify(event, null, 2));
+
+  // Group changes by employee ID (PK) to send a single notification per transaction.
+  const employeeChanges = {};
 
   for (const record of event.Records) {
-    console.log(`Processing record with eventName: ${record.eventName}`);
-
     if (record.eventName !== 'MODIFY') {
-      console.log("Skipping non-MODIFY event.");
+      console.log(`Skipping non-MODIFY event: ${record.eventName}`);
       continue;
     }
 
     const oldImage = unmarshall(record.dynamodb.OldImage);
     const newImage = unmarshall(record.dynamodb.NewImage);
+    const employeeId = newImage.PK;
 
-    console.log("Old Image:", oldImage);
-    console.log("New Image:", newImage);
-
-    if (newImage.SK !== 'SECTION#PERSONAL_DATA') {
-      console.log(`Skipping record with SK: ${newImage.SK}`);
-      continue;
+    // Initialize if this is the first change for this employee in this batch
+    if (!employeeChanges[employeeId]) {
+      employeeChanges[employeeId] = {
+        type: 'UPDATE',
+        employeeId: employeeId,
+        changedFields: {}
+      };
     }
-
-    const changedFields = {};
-
+    
+    // Compare fields and add any differences to the consolidated object
     for (const key in newImage) {
+      if (key === 'PK' || key === 'SK') continue; // Ignore partition/sort keys
+
       if (newImage[key] !== oldImage[key]) {
-        changedFields[key] = {
+        const section = newImage.SK.split('#')[1].toLowerCase().replace('_', ' '); // e.g., "personal data"
+        employeeChanges[employeeId].changedFields[`${section}.${key}`] = {
           old: oldImage[key],
           new: newImage[key],
         };
       }
     }
+  }
 
-    if (Object.keys(changedFields).length === 0) {
-      console.log("No meaningful changes detected.");
+  // Loop over the consolidated changes and send one message per employee
+  for (const employeeId in employeeChanges) {
+    const changeData = employeeChanges[employeeId];
+
+    if (Object.keys(changeData.changedFields).length === 0) {
+      console.log(`No meaningful changes detected for employee ${employeeId}.`);
       continue;
     }
 
-    const payload = {
-      type: 'UPDATE',
-      employeeId: newImage.PK,
-      firstName: newImage.firstName,
-      lastName: newImage.lastName,
-      email: '', // optional or can be fetched from CONTACT_INFO if needed
-      changedFields,
-    };
-
-    console.log("Prepared payload for SQS:", payload);
+    console.log("Prepared consolidated payload for SQS:", changeData);
 
     try {
-      const response = await sqsClient.send(new SendMessageCommand({
+      await sqsClient.send(new SendMessageCommand({
         QueueUrl: QUEUE_URL,
-        MessageBody: JSON.stringify(payload),
+        MessageBody: JSON.stringify(changeData),
       }));
-
-      console.log("SQS message sent successfully:", response.MessageId);
+      console.log(`SQS message sent successfully for employee ${employeeId}.`);
     } catch (error) {
-      console.error("Failed to send message to SQS:", error);
+      console.error(`Failed to send SQS message for employee ${employeeId}:`, error);
+      // Re-throw the error to ensure the batch is retried and eventually sent to the DLQ.
+      throw error; 
     }
   }
 };
